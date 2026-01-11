@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Appointment Booking Assistant</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+        }
+
+        h1 {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #chat-box {
+            border: 1px solid #ccc;
+            padding: 15px;
+            height: 300px;
+            overflow-y: auto;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        .user {
+            color: #333;
+        }
+
+        .bot {
+            color: #0a5;
+        }
+
+        input {
+            width: 300px;
+            padding: 8px;
+        }
+
+        button {
+            padding: 8px 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🩺 Appointment Booking Assistant</h1>
+
+    <div id="chat-box"></div>
+
+    <input
+        id="message"
+        type="text"
+        placeholder="Type your message..."
+        onkeydown="if(event.key === 'Enter') sendMessage()"
+    />
+    <button onclick="sendMessage()">Send</button>
+
+    <!-- 🔴 THIS WAS THE MAIN BUG -->
+    <!-- MUST load from /static -->
+    <script src="/static/script.js"></script>
+</body>
+</html>
