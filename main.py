@@ -13,10 +13,17 @@ from typing import Dict
 from calendar_oauth import get_oauth_flow
 from auth_store import oauth_store
 
+from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
+
+
 app = FastAPI()
+
+# ✅ Trust Render proxy headers (CRITICAL for OAuth)
+app.add_middleware(ProxyHeadersMiddleware)
 
 # Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 @app.get("/")
 def serve_ui():
@@ -25,6 +32,7 @@ def serve_ui():
 
 # session_id -> BookingState
 state_store: Dict[str, BookingState] = {}
+
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
@@ -48,7 +56,8 @@ def connect_calendar():
     flow = get_oauth_flow()
     auth_url, _ = flow.authorization_url(
         access_type="offline",
-        include_granted_scopes="true"
+        include_granted_scopes="true",
+        prompt="consent"
     )
     oauth_store["flow"] = flow
     return RedirectResponse(auth_url)
@@ -60,7 +69,13 @@ def oauth_callback(request: Request):
     if not flow:
         return {"error": "OAuth flow missing. Please reconnect calendar."}
 
-    flow.fetch_token(authorization_response=str(request.url))
+    # ✅ FORCE correct redirect URI (fixes invalid_client on Render)
+    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
+
+    auth_response = f"{redirect_uri}?{request.query_params}"
+
+    flow.fetch_token(authorization_response=auth_response)
+
     oauth_store["credentials"] = flow.credentials
 
     return {"status": "Calendar connected successfully 🎉"}
