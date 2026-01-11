@@ -13,13 +13,8 @@ from typing import Dict
 from calendar_oauth import get_oauth_flow
 from auth_store import oauth_store
 
-from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
-
 
 app = FastAPI()
-
-# ✅ Trust Render proxy headers (CRITICAL for OAuth)
-app.add_middleware(ProxyHeadersMiddleware)
 
 # Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -69,13 +64,11 @@ def oauth_callback(request: Request):
     if not flow:
         return {"error": "OAuth flow missing. Please reconnect calendar."}
 
-    # ✅ FORCE correct redirect URI (fixes invalid_client on Render)
+    # ✅ Force correct redirect URI (Render-safe)
     redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
-
     auth_response = f"{redirect_uri}?{request.query_params}"
 
     flow.fetch_token(authorization_response=auth_response)
-
     oauth_store["credentials"] = flow.credentials
 
     return {"status": "Calendar connected successfully 🎉"}
