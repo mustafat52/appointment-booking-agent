@@ -6,10 +6,14 @@ SCOPES = [
     "https://www.googleapis.com/auth/calendar"
 ]
 
-REDIRECT_URI = "http://localhost:8000/oauth/callback"
+# ✅ MUST come from environment variable (Render / local)
+REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
 
 
 def get_oauth_flow():
+    if not REDIRECT_URI:
+        raise RuntimeError("GOOGLE_REDIRECT_URI is not set")
+
     return Flow.from_client_config(
         {
             "web": {
