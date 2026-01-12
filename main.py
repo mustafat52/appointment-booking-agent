@@ -1,6 +1,4 @@
 import os
-os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
-
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
@@ -13,6 +11,9 @@ from typing import Dict
 from calendar_oauth import get_oauth_flow
 from auth_store import oauth_store
 
+# ❌ DO NOT enable insecure transport in production
+# Google REQUIRES HTTPS on Render
+# os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
 app = FastAPI()
 
@@ -38,13 +39,7 @@ def chat(req: ChatRequest):
 
     state = state_store[session_id]
 
-    try:
-        reply = run_agent(req.message, state)
-    except RuntimeError as e:
-        # Graceful handling when calendar is not connected
-        return ChatResponse(
-            reply="📅 Please connect your calendar first using the 'Connect Calendar' button."
-        )
+    reply = run_agent(req.message, state)
 
     if state.confirmed:
         state.reset()
@@ -59,31 +54,41 @@ def connect_calendar():
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
-        prompt="consent"
+        prompt="consent",
     )
 
-    # ❌ DO NOT STORE FLOW
+    oauth_store["flow"] = flow
     return RedirectResponse(auth_url)
 
 
 @app.get("/oauth/callback")
 def oauth_callback(request: Request):
-    # ✅ RECREATE flow (stateless, Render-safe)
-    flow = get_oauth_flow()
+    flow = oauth_store.get("flow")
+    if not flow:
+        raise HTTPException(
+            status_code=400,
+            detail="OAuth flow missing. Please reconnect calendar."
+        )
 
     redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
     if not redirect_uri:
-        raise HTTPException(status_code=500, detail="Redirect URI not configured")
+        raise HTTPException(
+            status_code=500,
+            detail="GOOGLE_REDIRECT_URI not set"
+        )
 
+    # ✅ CRITICAL FIX:
+    # Build the authorization response manually using the exact redirect URI
     auth_response = f"{redirect_uri}?{request.query_params}"
 
     try:
         flow.fetch_token(authorization_response=auth_response)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"OAuth failed: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"OAuth failed: {str(e)}"
+        )
 
     oauth_store["credentials"] = flow.credentials
 
-    return {
-        "status": "Calendar connected successfully 🎉 You can now book appointments."
-    }
+    return {"status": "Calendar connected successfully 🎉"}
