@@ -1,7 +1,7 @@
 import os
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 
@@ -38,7 +38,13 @@ def chat(req: ChatRequest):
 
     state = state_store[session_id]
 
-    reply = run_agent(req.message, state)
+    try:
+        reply = run_agent(req.message, state)
+    except RuntimeError as e:
+        # Graceful handling when calendar is not connected
+        return ChatResponse(
+            reply="📅 Please connect your calendar first using the 'Connect Calendar' button."
+        )
 
     if state.confirmed:
         state.reset()
@@ -49,26 +55,35 @@ def chat(req: ChatRequest):
 @app.get("/connect-calendar")
 def connect_calendar():
     flow = get_oauth_flow()
+
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
         prompt="consent"
     )
-    oauth_store["flow"] = flow
+
+    # ❌ DO NOT STORE FLOW
     return RedirectResponse(auth_url)
 
 
 @app.get("/oauth/callback")
 def oauth_callback(request: Request):
-    flow = oauth_store.get("flow")
-    if not flow:
-        return {"error": "OAuth flow missing. Please reconnect calendar."}
+    # ✅ RECREATE flow (stateless, Render-safe)
+    flow = get_oauth_flow()
 
-    # ✅ Force correct redirect URI (Render-safe)
     redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
+    if not redirect_uri:
+        raise HTTPException(status_code=500, detail="Redirect URI not configured")
+
     auth_response = f"{redirect_uri}?{request.query_params}"
 
-    flow.fetch_token(authorization_response=auth_response)
+    try:
+        flow.fetch_token(authorization_response=auth_response)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"OAuth failed: {str(e)}")
+
     oauth_store["credentials"] = flow.credentials
 
-    return {"status": "Calendar connected successfully 🎉"}
+    return {
+        "status": "Calendar connected successfully 🎉 You can now book appointments."
+    }
