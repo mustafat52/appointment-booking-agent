@@ -12,7 +12,7 @@ from tools import check_availability, book_appointment
 # Gemini / Google AI (ENV ONLY)
 # ===============================
 GENAI_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "models/gemini-1.5-flash")
+MODEL_NAME = os.getenv("MODEL_NAME", "models/gemini-flash-latest")
 
 if not GENAI_API_KEY:
     raise RuntimeError("GOOGLE_GEMINI_API_KEY is not set")
