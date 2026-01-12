@@ -1,20 +1,28 @@
-from config import MODEL_NAME
-from state import BookingState
-from tools import check_availability, book_appointment
-import google.generativeai as genai
+import os
 import json
 from datetime import date
 
-# Initialize Gemini model
+import google.generativeai as genai
+
+from state import BookingState
+from tools import check_availability, book_appointment
+
+
+# ===============================
+# Gemini / Google AI (ENV ONLY)
+# ===============================
+GENAI_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
+MODEL_NAME = os.getenv("MODEL_NAME", "models/gemini-1.5-flash")
+
+if not GENAI_API_KEY:
+    raise RuntimeError("GOOGLE_GEMINI_API_KEY is not set")
+
+genai.configure(api_key=GENAI_API_KEY)
+
 model = genai.GenerativeModel(MODEL_NAME)
 
 
 def extract_with_gemini(user_message: str):
-    """
-    Extract intent, date, and time from user message using Gemini.
-    """
-
-    # ✅ IMPORTANT: compute TODAY dynamically (NOT at import time)
     today = date.today().isoformat()
 
     prompt = f"""
@@ -24,14 +32,6 @@ TODAY'S DATE IS: {today}
 
 Your job is to detect appointment booking intent.
 
-If the user wants to:
-- book
-- schedule
-- make an appointment
-- reserve a slot
-
-Then intent MUST be "BOOK".
-
 Return ONLY valid JSON.
 
 Schema:
@@ -39,11 +39,6 @@ Schema:
   "date": "YYYY-MM-DD or null",
   "time": "HH:MM or null"
 }}
-
-Rules:
-- "tomorrow", "next Friday", etc. must be converted relative to TODAY'S DATE
-- "evening" means time is null
-- If booking intent is clear, DO NOT return UNKNOWN
 
 Message:
 {user_message}
@@ -54,45 +49,23 @@ Message:
     try:
         text = response.text.strip()
 
-        # ✅ Remove markdown fences if Gemini adds them
         if text.startswith("```"):
             text = text.replace("```json", "").replace("```", "").strip()
 
         return json.loads(text)
 
     except Exception as e:
-        print("❌ GEMINI PARSE ERROR:", e)
-        print("❌ RAW GEMINI OUTPUT:", response.text)
+        print("❌ Gemini parse error:", e)
+        print("❌ Raw output:", response.text)
 
-        return {
-            "intent": "UNKNOWN",
-            "date": None,
-            "time": None
-        }
+        return {"intent": "UNKNOWN", "date": None, "time": None}
 
 
 def run_agent(user_message: str, state: BookingState) -> str:
-    """
-    Core agent logic.
-    """
-
-    # 1️⃣ Extract intent/date/time using Gemini
     extracted = extract_with_gemini(user_message)
 
     print("🧠 EXTRACTED:", extracted)
 
-    # 2️⃣ Fallback intent detection (ONLY if Gemini failed)
-    if extracted["intent"] == "UNKNOWN":
-        booking_keywords = [
-            "book", "appointment", "schedule", "reserve",
-            "tomorrow", "today", "next"
-        ]
-        for word in booking_keywords:
-            if word in user_message.lower():
-                extracted["intent"] = "BOOK"
-                break
-
-    # 3️⃣ Update booking state
     if extracted["intent"] == "BOOK":
         state.intent = "BOOK"
 
@@ -104,17 +77,13 @@ def run_agent(user_message: str, state: BookingState) -> str:
 
     print("📦 STATE:", state.__dict__)
 
-    # 4️⃣ Ask for missing info
     if state.intent == "BOOK" and not state.date:
         return "Sure 🙂 What date would you like to book?"
 
     if state.intent == "BOOK" and not state.time:
         return "Got it. What time should I book?"
 
-    # 5️⃣ Final availability check + booking
     if state.is_complete():
-        print("🔍 FINAL CHECK:", state.date, state.time)
-
         if not check_availability(state.date, state.time):
             return "❌ That slot is not available. Please choose another time."
 
@@ -127,5 +96,4 @@ def run_agent(user_message: str, state: BookingState) -> str:
             f"⏰ Time: {booking['time']}"
         )
 
-    # 6️⃣ Fallback
     return "How can I help you today?"
