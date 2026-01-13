@@ -8,13 +8,8 @@ TIMEZONE = "Asia/Kolkata"
 
 
 def check_availability(date_str: str, time_str: str) -> bool:
-    """
-    date_str: YYYY-MM-DD
-    time_str: HH:MM
-    """
     print("CHECKING AVAILABILITY:", date_str, time_str)
 
-    # 1️⃣ Ensure calendar is connected
     credentials = oauth_store.get("credentials")
     if not credentials:
         raise RuntimeError("Calendar not connected")
@@ -30,45 +25,40 @@ def check_availability(date_str: str, time_str: str) -> bool:
     buffer_minutes = DOCTOR_CONFIG["buffer_minutes"]
     end_dt = start_dt + timedelta(minutes=duration)
 
-    # 2️⃣ Working day check
+    # ❌ Weekend block (explicit)
     if start_dt.weekday() not in DOCTOR_CONFIG["working_days"]:
+        print("⛔ Not a working day")
         return False
 
-    # 3️⃣ Working hours check (FIXED)
+    # ❌ Working hours block
     wh_start = DOCTOR_CONFIG["working_hours"]["start"]
     wh_end = DOCTOR_CONFIG["working_hours"]["end"]
 
-    slot_end_time = (start_dt + timedelta(minutes=duration)).time()
-
-    if not (wh_start <= start_dt.time() and slot_end_time <= wh_end):
+    if not (wh_start <= start_dt.time() and end_dt.time() <= wh_end):
+        print("⛔ Outside working hours")
         return False
 
-    # 4️⃣ Calendar overlap check (FIXED → UTC)
+    # ✅ Calendar overlap (UTC-safe)
     events_result = service.events().list(
         calendarId="primary",
         timeMin=(start_dt - timedelta(minutes=buffer_minutes))
-            .astimezone(pytz.UTC)
-            .isoformat(),
+        .astimezone(pytz.UTC)
+        .isoformat(),
         timeMax=(end_dt + timedelta(minutes=buffer_minutes))
-            .astimezone(pytz.UTC)
-            .isoformat(),
+        .astimezone(pytz.UTC)
+        .isoformat(),
         singleEvents=True,
         orderBy="startTime",
     ).execute()
 
-    events = events_result.get("items", [])
-
-    if events:
+    if events_result.get("items"):
+        print("⛔ Slot busy")
         return False
 
     return True
 
 
 def book_appointment(date_str: str, time_str: str) -> dict:
-    """
-    Create a real Google Calendar event.
-    """
-
     credentials = oauth_store.get("credentials")
     if not credentials:
         raise RuntimeError("Calendar not connected")
@@ -86,19 +76,12 @@ def book_appointment(date_str: str, time_str: str) -> dict:
     event = {
         "summary": "Patient Appointment",
         "description": "Booked via AI Appointment Agent",
-        "start": {
-            "dateTime": start_dt.isoformat(),
-            "timeZone": TIMEZONE,
-        },
-        "end": {
-            "dateTime": end_dt.isoformat(),
-            "timeZone": TIMEZONE,
-        },
+        "start": {"dateTime": start_dt.isoformat(), "timeZone": TIMEZONE},
+        "end": {"dateTime": end_dt.isoformat(), "timeZone": TIMEZONE},
     }
 
     created_event = service.events().insert(
-        calendarId="primary",
-        body=event
+        calendarId="primary", body=event
     ).execute()
 
     return {
