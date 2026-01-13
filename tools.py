@@ -25,12 +25,12 @@ def check_availability(date_str: str, time_str: str) -> bool:
     buffer_minutes = DOCTOR_CONFIG["buffer_minutes"]
     end_dt = start_dt + timedelta(minutes=duration)
 
-    # ❌ Weekend block (explicit)
+    # ❌ Working day check
     if start_dt.weekday() not in DOCTOR_CONFIG["working_days"]:
         print("⛔ Not a working day")
         return False
 
-    # ❌ Working hours block
+    # ❌ Working hours check
     wh_start = DOCTOR_CONFIG["working_hours"]["start"]
     wh_end = DOCTOR_CONFIG["working_hours"]["end"]
 
@@ -58,7 +58,12 @@ def check_availability(date_str: str, time_str: str) -> bool:
     return True
 
 
-def book_appointment(date_str: str, time_str: str) -> dict:
+def book_appointment(
+    date_str: str,
+    time_str: str,
+    patient_name: str,
+    patient_phone: str,
+) -> dict:
     credentials = oauth_store.get("credentials")
     if not credentials:
         raise RuntimeError("Calendar not connected")
@@ -74,8 +79,12 @@ def book_appointment(date_str: str, time_str: str) -> dict:
     end_dt = start_dt + timedelta(minutes=duration)
 
     event = {
-        "summary": "Patient Appointment",
-        "description": "Booked via AI Appointment Agent",
+        "summary": f"Patient Appointment – {patient_name}",
+        "description": (
+            f"Patient Name: {patient_name}\n"
+            f"Phone: {patient_phone}\n"
+            f"Booked via AI Appointment Agent"
+        ),
         "start": {"dateTime": start_dt.isoformat(), "timeZone": TIMEZONE},
         "end": {"dateTime": end_dt.isoformat(), "timeZone": TIMEZONE},
     }

@@ -120,7 +120,13 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 state.reset()
                 return "❌ That slot is no longer available."
 
-            booking = book_appointment(state.date, state.time)
+            booking = book_appointment(
+                state.date,
+                state.time,
+                state.patient_name,
+                state.patient_phone,
+            )
+
             state.reset()
 
             return (
