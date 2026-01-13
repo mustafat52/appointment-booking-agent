@@ -1,5 +1,4 @@
 class BookingState:
-
     def __init__(self):
         self.intent = None
         self.date = None

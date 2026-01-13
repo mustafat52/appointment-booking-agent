@@ -10,7 +10,7 @@ from tools import check_availability, book_appointment
 
 
 # ===============================
-# Gemini / Google AI (ENV ONLY)
+# Gemini Config (ENV ONLY)
 # ===============================
 GENAI_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "models/gemini-flash-latest")
@@ -20,7 +20,6 @@ if not GENAI_API_KEY:
 
 genai.configure(api_key=GENAI_API_KEY)
 model = genai.GenerativeModel(MODEL_NAME)
-
 
 TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 
@@ -61,54 +60,73 @@ Message:
         if text.startswith("```"):
             text = text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
-    except Exception as e:
-        print("❌ Gemini parse error:", e)
-        print("❌ Raw output:", response.text)
+    except Exception:
         return {"intent": "UNKNOWN", "date": None, "time": None}
 
 
 def run_agent(user_message: str, state: BookingState) -> str:
-    extracted = extract_with_gemini(user_message)
-    print("🧠 EXTRACTED:", extracted)
+    message_lower = user_message.lower().strip()
 
-    # Intent
+    # -------------------------------
+    # CONFIRMATION HANDLING
+    # -------------------------------
+    if state.is_complete() and not state.confirmed:
+        if message_lower in {"yes", "confirm", "okay", "ok"}:
+            if not check_availability(state.date, state.time):
+                state.reset()
+                return "❌ That slot is no longer available."
+
+            booking = book_appointment(state.date, state.time)
+            state.reset()
+
+            return (
+                f"✅ Your appointment is confirmed!\n"
+                f"📅 Date: {booking['date']}\n"
+                f"⏰ Time: {booking['time']}"
+            )
+
+        if message_lower in {"no", "cancel"}:
+            state.reset()
+            return "Okay, I’ve cancelled the booking process."
+
+        return (
+            f"Please confirm:\n"
+            f"📅 Date: {state.date}\n"
+            f"⏰ Time: {state.time}\n"
+            f"Reply with **yes** to confirm or **no** to cancel."
+        )
+
+    # -------------------------------
+    # NORMAL EXTRACTION FLOW
+    # -------------------------------
+    extracted = extract_with_gemini(user_message)
+
     if extracted.get("intent") == "BOOK":
         state.intent = "BOOK"
 
-    # Date
     if extracted.get("date"):
         state.date = extracted["date"]
 
-    # Time (STRICT)
     if extracted.get("time"):
         if is_valid_time(extracted["time"]):
             state.time = extracted["time"]
         else:
-            state.time = None  # 🔥 CRITICAL FIX
-
-    print("📦 STATE:", state.__dict__)
+            state.time = None
 
     # Ask missing info
     if state.intent == "BOOK" and not state.date:
         return "Sure 🙂 What date would you like to book?"
 
     if state.intent == "BOOK" and not state.time:
-        return "Got it. What time should I book? (e.g., 15:00)"
+        return "Got it. What time should I book? (HH:MM format)"
 
-    # Final booking
-    if state.is_complete():
-        print("🔍 FINAL CHECK:", state.date, state.time)
-
-        if not check_availability(state.date, state.time):
-            return "❌ That slot is not available or outside working hours."
-
-        booking = book_appointment(state.date, state.time)
-        state.confirmed = True
-
+    # Ask for confirmation
+    if state.is_complete() and not state.confirmed:
         return (
-            f"✅ Your appointment is confirmed!\n"
-            f"📅 Date: {booking['date']}\n"
-            f"⏰ Time: {booking['time']}"
+            f"I can book an appointment on:\n"
+            f"📅 Date: {state.date}\n"
+            f"⏰ Time: {state.time}\n\n"
+            f"Should I confirm?"
         )
 
     return "How can I help you today?"
