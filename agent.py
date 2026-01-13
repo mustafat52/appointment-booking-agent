@@ -65,13 +65,14 @@ Message:
 
 
 def run_agent(user_message: str, state: BookingState) -> str:
-    message_lower = user_message.lower().strip()
+    msg = user_message.strip()
+    msg_lower = msg.lower()
 
     # -------------------------------
     # CONFIRMATION HANDLING
     # -------------------------------
     if state.is_complete() and not state.confirmed:
-        if message_lower in {"yes", "confirm", "okay", "ok"}:
+        if msg_lower in {"yes", "confirm", "ok", "okay"}:
             if not check_availability(state.date, state.time):
                 state.reset()
                 return "❌ That slot is no longer available."
@@ -85,21 +86,23 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 f"⏰ Time: {booking['time']}"
             )
 
-        if message_lower in {"no", "cancel"}:
+        if msg_lower in {"no", "cancel"}:
             state.reset()
             return "Okay, I’ve cancelled the booking process."
 
         return (
-            f"Please confirm:\n"
+            f"Please confirm the details:\n"
             f"📅 Date: {state.date}\n"
             f"⏰ Time: {state.time}\n"
+            f"👤 Patient: {state.patient_name}\n"
+            f"📞 Phone: {state.patient_phone}\n\n"
             f"Reply with **yes** to confirm or **no** to cancel."
         )
 
     # -------------------------------
     # NORMAL EXTRACTION FLOW
     # -------------------------------
-    extracted = extract_with_gemini(user_message)
+    extracted = extract_with_gemini(msg)
 
     if extracted.get("intent") == "BOOK":
         state.intent = "BOOK"
@@ -113,19 +116,31 @@ def run_agent(user_message: str, state: BookingState) -> str:
         else:
             state.time = None
 
-    # Ask missing info
+    # -------------------------------
+    # ASK MISSING INFORMATION (ORDERED)
+    # -------------------------------
     if state.intent == "BOOK" and not state.date:
         return "Sure 🙂 What date would you like to book?"
 
     if state.intent == "BOOK" and not state.time:
-        return "Got it. What time should I book? (HH:MM format)"
+        return "What time would you prefer?"
 
-    # Ask for confirmation
+    if state.intent == "BOOK" and not state.patient_name:
+        return "May I have the patient’s name?"
+
+    if state.intent == "BOOK" and not state.patient_phone:
+        return "Please share a contact phone number."
+
+    # -------------------------------
+    # ASK FOR CONFIRMATION
+    # -------------------------------
     if state.is_complete() and not state.confirmed:
         return (
-            f"I can book an appointment on:\n"
+            f"I can book the appointment with these details:\n"
             f"📅 Date: {state.date}\n"
-            f"⏰ Time: {state.time}\n\n"
+            f"⏰ Time: {state.time}\n"
+            f"👤 Patient: {state.patient_name}\n"
+            f"📞 Phone: {state.patient_phone}\n\n"
             f"Should I confirm?"
         )
 
