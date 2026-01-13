@@ -28,6 +28,32 @@ def is_valid_time(value: str | None) -> bool:
     return bool(value and TIME_PATTERN.match(value))
 
 
+# -------------------------------
+# Light cleaners (NO AI)
+# -------------------------------
+def clean_name(text: str) -> str:
+    lowered = text.lower()
+    fillers = [
+        "my name is",
+        "name is",
+        "patient name is",
+        "the patient's name is",
+        "patients name is",
+        "it's",
+        "its",
+    ]
+    for f in fillers:
+        lowered = lowered.replace(f, "")
+    return lowered.strip().title()
+
+
+def extract_phone(text: str) -> str | None:
+    digits = re.sub(r"\D", "", text)
+    if len(digits) == 10:
+        return digits
+    return None
+
+
 def extract_with_gemini(user_message: str):
     today = date.today().isoformat()
 
@@ -69,9 +95,26 @@ def run_agent(user_message: str, state: BookingState) -> str:
     msg_lower = msg.lower()
 
     # -------------------------------
+    # CONTEXT-AWARE CAPTURE
+    # -------------------------------
+    if state.intent == "BOOK" and state.date and state.time:
+        if state.patient_name is None:
+            name = clean_name(msg)
+            if name:
+                state.patient_name = name
+                return "Thanks. Please share a contact phone number."
+
+        if state.patient_phone is None:
+            phone = extract_phone(msg)
+            if phone:
+                state.patient_phone = phone
+            else:
+                return "Please enter a valid 10-digit phone number."
+
+    # -------------------------------
     # CONFIRMATION HANDLING
     # -------------------------------
-    if state.is_complete() and not state.confirmed:
+    if state.is_complete():
         if msg_lower in {"yes", "confirm", "ok", "okay"}:
             if not check_availability(state.date, state.time):
                 state.reset()
@@ -130,18 +173,5 @@ def run_agent(user_message: str, state: BookingState) -> str:
 
     if state.intent == "BOOK" and not state.patient_phone:
         return "Please share a contact phone number."
-
-    # -------------------------------
-    # ASK FOR CONFIRMATION
-    # -------------------------------
-    if state.is_complete() and not state.confirmed:
-        return (
-            f"I can book the appointment with these details:\n"
-            f"📅 Date: {state.date}\n"
-            f"⏰ Time: {state.time}\n"
-            f"👤 Patient: {state.patient_name}\n"
-            f"📞 Phone: {state.patient_phone}\n\n"
-            f"Should I confirm?"
-        )
 
     return "How can I help you today?"
