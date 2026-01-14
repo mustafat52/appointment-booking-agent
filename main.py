@@ -43,12 +43,21 @@ def get_doctor_or_404(doctor_slug: str):
 # Doctor-specific booking URL
 # -------------------------------
 @app.get("/book/{doctor_slug}")
-def serve_doctor_ui(doctor_slug: str):
-    # Validate doctor exists
-    get_doctor_or_404(doctor_slug)
+def serve_doctor_ui(doctor_slug: str, request: Request):
+    doctor = get_doctor_or_404(doctor_slug)
 
-    # Serve SAME UI (doctor context wired in Step 3.3)
+    # Bind doctor to session state
+    session_id = request.cookies.get("session_id", "default")
+
+    if session_id not in state_store:
+        state_store[session_id] = BookingState()
+
+    state = state_store[session_id]
+    state.doctor_id = doctor["id"]
+    state.doctor_name = doctor["name"]
+
     return FileResponse("static/index.html")
+
 
 
 # -------------------------------
