@@ -29,31 +29,32 @@ def is_valid_time(value: str | None) -> bool:
 
 
 # -------------------------------
-# Light cleaners (NO AI)
+# Flexible time parsing (NO AI)
 # -------------------------------
-def clean_name(text: str) -> str:
-    lowered = text.lower()
-    fillers = [
-        "my name is",
-        "name is",
-        "patient name is",
-        "the patient's name is",
-        "patients name is",
-        "it's",
-        "its",
-    ]
-    for f in fillers:
-        lowered = lowered.replace(f, "")
-    return lowered.strip().title()
+def parse_flexible_time(text: str) -> str | None:
+    text = text.lower().strip()
 
+    match = re.search(r"(\d{1,2})", text)
+    if not match:
+        return None
 
-def extract_phone(text: str) -> str | None:
-    digits = re.sub(r"\D", "", text)
-    if len(digits) == 10:
-        return digits
+    hour = int(match.group(1))
+    if hour < 1 or hour > 12:
+        return None
+
+    if "morning" in text:
+        return f"{hour:02d}:00"
+    if "afternoon" in text or "evening" in text:
+        return f"{hour + 12:02d}:00"
+    if "night" in text:
+        return f"{hour + 12:02d}:00"
+
     return None
 
 
+# -------------------------------
+# Gemini extraction (guarded)
+# -------------------------------
 def extract_with_gemini(user_message: str):
     today = date.today().isoformat()
 
@@ -79,46 +80,57 @@ Message:
 {user_message}
 """
 
-    response = model.generate_content(prompt)
-
     try:
+        response = model.generate_content(prompt)
         text = response.text.strip()
         if text.startswith("```"):
             text = text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
     except Exception:
-        return {"intent": "UNKNOWN", "date": None, "time": None}
+        return None
 
 
+# -------------------------------
+# Agent main
+# -------------------------------
 def run_agent(user_message: str, state: BookingState) -> str:
     msg = user_message.strip()
     msg_lower = msg.lower()
 
-    # -------------------------------
-    # CONTEXT-AWARE CAPTURE
-    # -------------------------------
+    # --------------------------------
+    # TIME CONFIRMATION HANDLING
+    # --------------------------------
+    if hasattr(state, "pending_time") and state.pending_time:
+        if msg_lower in {"yes", "confirm", "ok"}:
+            state.time = state.pending_time
+            state.pending_time = None
+        else:
+            state.pending_time = None
+            return "Okay, please tell me the time again."
+
+    # --------------------------------
+    # NAME & PHONE CAPTURE (context)
+    # --------------------------------
     if state.intent == "BOOK" and state.date and state.time:
         if state.patient_name is None:
-            name = clean_name(msg)
-            if name:
-                state.patient_name = name
-                return "Thanks. Please share a contact phone number."
+            state.patient_name = msg.title()
+            return "Thanks. Please share a contact phone number."
 
         if state.patient_phone is None:
-            phone = extract_phone(msg)
-            if phone:
-                state.patient_phone = phone
+            digits = re.sub(r"\D", "", msg)
+            if len(digits) == 10:
+                state.patient_phone = digits
             else:
                 return "Please enter a valid 10-digit phone number."
 
-    # -------------------------------
-    # CONFIRMATION HANDLING
-    # -------------------------------
+    # --------------------------------
+    # CONFIRMATION
+    # --------------------------------
     if state.is_complete():
-        if msg_lower in {"yes", "confirm", "ok", "okay"}:
+        if msg_lower in {"yes", "confirm"}:
             if not check_availability(state.date, state.time):
                 state.reset()
-                return "❌ That slot is no longer available."
+                return "❌ That slot is not available."
 
             booking = book_appointment(
                 state.date,
@@ -126,7 +138,6 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 state.patient_name,
                 state.patient_phone,
             )
-
             state.reset()
 
             return (
@@ -140,18 +151,29 @@ def run_agent(user_message: str, state: BookingState) -> str:
             return "Okay, I’ve cancelled the booking process."
 
         return (
-            f"Please confirm the details:\n"
+            f"Please confirm:\n"
             f"📅 Date: {state.date}\n"
             f"⏰ Time: {state.time}\n"
             f"👤 Patient: {state.patient_name}\n"
             f"📞 Phone: {state.patient_phone}\n\n"
-            f"Reply with **yes** to confirm or **no** to cancel."
+            f"Reply with yes or no."
         )
 
-    # -------------------------------
-    # NORMAL EXTRACTION FLOW
-    # -------------------------------
+    # --------------------------------
+    # FLEXIBLE TIME FIRST (NO GEMINI)
+    # --------------------------------
+    if state.intent == "BOOK" and state.date and not state.time:
+        flexible = parse_flexible_time(msg)
+        if flexible:
+            state.pending_time = flexible
+            return f"Do you mean {flexible}? Please confirm."
+
+    # --------------------------------
+    # GEMINI EXTRACTION (LAST RESORT)
+    # --------------------------------
     extracted = extract_with_gemini(msg)
+    if extracted is None:
+        return "⚠️ I’m having trouble understanding right now. Please try again shortly."
 
     if extracted.get("intent") == "BOOK":
         state.intent = "BOOK"
@@ -159,20 +181,17 @@ def run_agent(user_message: str, state: BookingState) -> str:
     if extracted.get("date"):
         state.date = extracted["date"]
 
-    if extracted.get("time"):
-        if is_valid_time(extracted["time"]):
-            state.time = extracted["time"]
-        else:
-            state.time = None
+    if extracted.get("time") and is_valid_time(extracted["time"]):
+        state.time = extracted["time"]
 
-    # -------------------------------
-    # ASK MISSING INFORMATION (ORDERED)
-    # -------------------------------
+    # --------------------------------
+    # ASK MISSING INFO
+    # --------------------------------
     if state.intent == "BOOK" and not state.date:
         return "Sure 🙂 What date would you like to book?"
 
     if state.intent == "BOOK" and not state.time:
-        return "What time would you prefer?"
+        return "What time would you prefer? (e.g., 10 in the morning)"
 
     if state.intent == "BOOK" and not state.patient_name:
         return "May I have the patient’s name?"
