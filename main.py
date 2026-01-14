@@ -11,9 +11,8 @@ from typing import Dict
 from calendar_oauth import get_oauth_flow
 from auth_store import oauth_store
 
-# ❌ DO NOT enable insecure transport in production
-# Google REQUIRES HTTPS on Render
-# os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+# Phase 3 – Step 3.2
+from doctor_config import DOCTORS, DEFAULT_DOCTOR_ID
 
 app = FastAPI()
 
@@ -30,6 +29,31 @@ def serve_ui():
 state_store: Dict[str, BookingState] = {}
 
 
+# -------------------------------
+# Doctor resolution helper
+# -------------------------------
+def get_doctor_or_404(doctor_slug: str):
+    doctor = DOCTORS.get(doctor_slug)
+    if not doctor:
+        raise HTTPException(status_code=404, detail="Doctor not found")
+    return doctor
+
+
+# -------------------------------
+# Doctor-specific booking URL
+# -------------------------------
+@app.get("/book/{doctor_slug}")
+def serve_doctor_ui(doctor_slug: str):
+    # Validate doctor exists
+    get_doctor_or_404(doctor_slug)
+
+    # Serve SAME UI (doctor context wired in Step 3.3)
+    return FileResponse("static/index.html")
+
+
+# -------------------------------
+# Chat endpoint (unchanged)
+# -------------------------------
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
     session_id = req.session_id
@@ -47,6 +71,9 @@ def chat(req: ChatRequest):
     return ChatResponse(reply=reply)
 
 
+# -------------------------------
+# OAuth – connect calendar
+# -------------------------------
 @app.get("/connect-calendar")
 def connect_calendar():
     flow = get_oauth_flow()
@@ -61,6 +88,9 @@ def connect_calendar():
     return RedirectResponse(auth_url)
 
 
+# -------------------------------
+# OAuth callback
+# -------------------------------
 @app.get("/oauth/callback")
 def oauth_callback(request: Request):
     flow = oauth_store.get("flow")
@@ -77,8 +107,6 @@ def oauth_callback(request: Request):
             detail="GOOGLE_REDIRECT_URI not set"
         )
 
-    # ✅ CRITICAL FIX:
-    # Build the authorization response manually using the exact redirect URI
     auth_response = f"{redirect_uri}?{request.query_params}"
 
     try:
