@@ -22,6 +22,7 @@ genai.configure(api_key=GENAI_API_KEY)
 model = genai.GenerativeModel(MODEL_NAME)
 
 TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+CONTROL_WORDS = {"yes", "no", "confirm", "ok", "okay"}
 
 
 def is_valid_time(value: str | None) -> bool:
@@ -44,9 +45,7 @@ def parse_flexible_time(text: str) -> str | None:
 
     if "morning" in text:
         return f"{hour:02d}:00"
-    if "afternoon" in text or "evening" in text:
-        return f"{hour + 12:02d}:00"
-    if "night" in text:
+    if "afternoon" in text or "evening" in text or "night" in text:
         return f"{hour + 12:02d}:00"
 
     return None
@@ -101,7 +100,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
     # TIME CONFIRMATION HANDLING
     # --------------------------------
     if hasattr(state, "pending_time") and state.pending_time:
-        if msg_lower in {"yes", "confirm", "ok"}:
+        if msg_lower in CONTROL_WORDS:
             state.time = state.pending_time
             state.pending_time = None
         else:
@@ -109,10 +108,12 @@ def run_agent(user_message: str, state: BookingState) -> str:
             return "Okay, please tell me the time again."
 
     # --------------------------------
-    # NAME & PHONE CAPTURE (context)
+    # NAME & PHONE CAPTURE (CONTEXT-AWARE)
     # --------------------------------
     if state.intent == "BOOK" and state.date and state.time:
         if state.patient_name is None:
+            if msg_lower in CONTROL_WORDS:
+                return "May I have the patient’s name?"
             state.patient_name = msg.title()
             return "Thanks. Please share a contact phone number."
 
@@ -124,7 +125,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 return "Please enter a valid 10-digit phone number."
 
     # --------------------------------
-    # CONFIRMATION
+    # FINAL CONFIRMATION
     # --------------------------------
     if state.is_complete():
         if msg_lower in {"yes", "confirm"}:
@@ -160,7 +161,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
         )
 
     # --------------------------------
-    # FLEXIBLE TIME FIRST (NO GEMINI)
+    # FLEXIBLE TIME (RULE-BASED FIRST)
     # --------------------------------
     if state.intent == "BOOK" and state.date and not state.time:
         flexible = parse_flexible_time(msg)
@@ -185,7 +186,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
         state.time = extracted["time"]
 
     # --------------------------------
-    # ASK MISSING INFO
+    # ASK MISSING INFORMATION
     # --------------------------------
     if state.intent == "BOOK" and not state.date:
         return "Sure 🙂 What date would you like to book?"
