@@ -7,6 +7,7 @@ import google.generativeai as genai
 
 from state import BookingState
 from tools import check_availability, book_appointment
+from doctor_config import DEFAULT_DOCTOR_ID
 
 
 # ===============================
@@ -96,6 +97,8 @@ def run_agent(user_message: str, state: BookingState) -> str:
     msg = user_message.strip()
     msg_lower = msg.lower()
 
+    doctor_id = state.doctor_id or DEFAULT_DOCTOR_ID
+
     # --------------------------------
     # TIME CONFIRMATION HANDLING
     # --------------------------------
@@ -108,7 +111,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
             return "Okay, please tell me the time again."
 
     # --------------------------------
-    # NAME & PHONE CAPTURE (CONTEXT-AWARE)
+    # NAME & PHONE CAPTURE
     # --------------------------------
     if state.intent == "BOOK" and state.date and state.time:
         if state.patient_name is None:
@@ -129,13 +132,14 @@ def run_agent(user_message: str, state: BookingState) -> str:
     # --------------------------------
     if state.is_complete():
         if msg_lower in {"yes", "confirm"}:
-            if not check_availability(state.date, state.time):
+            if not check_availability(state.date, state.time, doctor_id):
                 state.reset()
                 return "❌ That slot is not available."
 
             booking = book_appointment(
                 state.date,
                 state.time,
+                doctor_id,
                 state.patient_name,
                 state.patient_phone,
             )
@@ -161,7 +165,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
         )
 
     # --------------------------------
-    # FLEXIBLE TIME (RULE-BASED FIRST)
+    # FLEXIBLE TIME
     # --------------------------------
     if state.intent == "BOOK" and state.date and not state.time:
         flexible = parse_flexible_time(msg)
@@ -170,7 +174,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
             return f"Do you mean {flexible}? Please confirm."
 
     # --------------------------------
-    # GEMINI EXTRACTION (LAST RESORT)
+    # GEMINI EXTRACTION
     # --------------------------------
     extracted = extract_with_gemini(msg)
     if extracted is None:

@@ -1,18 +1,28 @@
 from datetime import datetime, timedelta
+import pytz
+
 from calendar_oauth import build_calendar_service
 from auth_store import oauth_store
-from doctor_config import DOCTOR_CONFIG
-import pytz
+from doctor_config import DOCTORS, DEFAULT_DOCTOR_ID
 
 TIMEZONE = "Asia/Kolkata"
 
 
-def check_availability(date_str: str, time_str: str) -> bool:
-    print("CHECKING AVAILABILITY:", date_str, time_str)
+def _get_doctor(doctor_id: str):
+    doctor = DOCTORS.get(doctor_id)
+    if not doctor:
+        doctor = DOCTORS[DEFAULT_DOCTOR_ID]
+    return doctor
+
+
+def check_availability(date_str: str, time_str: str, doctor_id: str) -> bool:
+    print("CHECKING AVAILABILITY:", date_str, time_str, doctor_id)
 
     credentials = oauth_store.get("credentials")
     if not credentials:
         raise RuntimeError("Calendar not connected")
+
+    doctor = _get_doctor(doctor_id)
 
     service = build_calendar_service(credentials)
     tz = pytz.timezone(TIMEZONE)
@@ -21,26 +31,28 @@ def check_availability(date_str: str, time_str: str) -> bool:
         datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
     )
 
-    duration = DOCTOR_CONFIG["slot_duration_minutes"]
-    buffer_minutes = DOCTOR_CONFIG["buffer_minutes"]
+    duration = doctor["slot_duration_minutes"]
+    buffer_minutes = doctor["buffer_minutes"]
     end_dt = start_dt + timedelta(minutes=duration)
 
     # ❌ Working day check
-    if start_dt.weekday() not in DOCTOR_CONFIG["working_days"]:
-        print("⛔ Not a working day")
+    if start_dt.weekday() not in doctor["working_days"]:
         return False
 
     # ❌ Working hours check
-    wh_start = DOCTOR_CONFIG["working_hours"]["start"]
-    wh_end = DOCTOR_CONFIG["working_hours"]["end"]
+    wh_start = datetime.strptime(
+        doctor["working_hours"]["start"], "%H:%M"
+    ).time()
+    wh_end = datetime.strptime(
+        doctor["working_hours"]["end"], "%H:%M"
+    ).time()
 
     if not (wh_start <= start_dt.time() and end_dt.time() <= wh_end):
-        print("⛔ Outside working hours")
         return False
 
-    # ✅ Calendar overlap (UTC-safe)
-    events_result = service.events().list(
-        calendarId="primary",
+    # ✅ Calendar overlap
+    events = service.events().list(
+        calendarId=doctor["calendar_id"],
         timeMin=(start_dt - timedelta(minutes=buffer_minutes))
         .astimezone(pytz.UTC)
         .isoformat(),
@@ -51,22 +63,21 @@ def check_availability(date_str: str, time_str: str) -> bool:
         orderBy="startTime",
     ).execute()
 
-    if events_result.get("items"):
-        print("⛔ Slot busy")
-        return False
-
-    return True
+    return not events.get("items")
 
 
 def book_appointment(
     date_str: str,
     time_str: str,
+    doctor_id: str,
     patient_name: str,
     patient_phone: str,
 ) -> dict:
     credentials = oauth_store.get("credentials")
     if not credentials:
         raise RuntimeError("Calendar not connected")
+
+    doctor = _get_doctor(doctor_id)
 
     service = build_calendar_service(credentials)
     tz = pytz.timezone(TIMEZONE)
@@ -75,12 +86,14 @@ def book_appointment(
         datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
     )
 
-    duration = DOCTOR_CONFIG["slot_duration_minutes"]
-    end_dt = start_dt + timedelta(minutes=duration)
+    end_dt = start_dt + timedelta(
+        minutes=doctor["slot_duration_minutes"]
+    )
 
     event = {
         "summary": f"Patient Appointment – {patient_name}",
         "description": (
+            f"Doctor: {doctor['name']}\n"
             f"Patient Name: {patient_name}\n"
             f"Phone: {patient_phone}\n"
             f"Booked via AI Appointment Agent"
@@ -90,7 +103,8 @@ def book_appointment(
     }
 
     created_event = service.events().insert(
-        calendarId="primary", body=event
+        calendarId=doctor["calendar_id"],
+        body=event
     ).execute()
 
     return {
