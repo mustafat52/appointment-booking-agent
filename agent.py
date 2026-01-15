@@ -25,6 +25,10 @@ model = genai.GenerativeModel(MODEL_NAME)
 TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 CONTROL_WORDS = {"yes", "no", "confirm", "ok", "okay"}
 
+# Phase 4.1 intent keywords
+CANCEL_KEYWORDS = {"cancel", "delete", "remove", "drop"}
+RESCHEDULE_KEYWORDS = {"reschedule", "change", "move", "shift", "modify"}
+
 
 def is_valid_time(value: str | None) -> bool:
     return bool(value and TIME_PATTERN.match(value))
@@ -54,27 +58,16 @@ def parse_flexible_time(text: str) -> str | None:
 
 # -------------------------------
 # Gemini extraction (guarded)
+# Used ONLY if rule-based intent fails
 # -------------------------------
-def extract_with_gemini(user_message: str):
-    today = date.today().isoformat()
-
+def extract_intent_with_gemini(user_message: str):
     prompt = f"""
-You are an information extraction system.
-
-TODAY'S DATE IS: {today}
+You are an intent classification system.
 
 Return ONLY valid JSON.
 
 Schema:
-{{"intent": "BOOK or UNKNOWN",
-  "date": "YYYY-MM-DD or null",
-  "time": "HH:MM or null"
-}}
-
-Rules:
-- Convert 3pm → 15:00
-- If time is unclear, return null
-- Do NOT guess time
+{{"intent": "BOOK | CANCEL | RESCHEDULE | UNKNOWN"}}
 
 Message:
 {user_message}
@@ -85,9 +78,10 @@ Message:
         text = response.text.strip()
         if text.startswith("```"):
             text = text.replace("```json", "").replace("```", "").strip()
-        return json.loads(text)
+        data = json.loads(text)
+        return data.get("intent", "UNKNOWN")
     except Exception:
-        return None
+        return "UNKNOWN"
 
 
 # -------------------------------
@@ -99,10 +93,27 @@ def run_agent(user_message: str, state: BookingState) -> str:
 
     doctor_id = state.doctor_id or DEFAULT_DOCTOR_ID
 
-    # --------------------------------
+    # ==================================================
+    # PHASE 4.1 — INTENT DETECTION (RULE-BASED FIRST)
+    # ==================================================
+    if any(word in msg_lower for word in CANCEL_KEYWORDS):
+        state.intent = "CANCEL"
+        return (
+            "I understand you want to cancel an appointment. "
+            "I’ll help with that shortly."
+        )
+
+    if any(word in msg_lower for word in RESCHEDULE_KEYWORDS):
+        state.intent = "RESCHEDULE"
+        return (
+            "I understand you want to reschedule an appointment. "
+            "I’ll help with that shortly."
+        )
+
+    # ==================================================
     # TIME CONFIRMATION HANDLING
-    # --------------------------------
-    if hasattr(state, "pending_time") and state.pending_time:
+    # ==================================================
+    if state.pending_time:
         if msg_lower in CONTROL_WORDS:
             state.time = state.pending_time
             state.pending_time = None
@@ -110,9 +121,9 @@ def run_agent(user_message: str, state: BookingState) -> str:
             state.pending_time = None
             return "Okay, please tell me the time again."
 
-    # --------------------------------
-    # NAME & PHONE CAPTURE
-    # --------------------------------
+    # ==================================================
+    # NAME & PHONE CAPTURE (BOOK FLOW)
+    # ==================================================
     if state.intent == "BOOK" and state.date and state.time:
         if state.patient_name is None:
             if msg_lower in CONTROL_WORDS:
@@ -127,9 +138,9 @@ def run_agent(user_message: str, state: BookingState) -> str:
             else:
                 return "Please enter a valid 10-digit phone number."
 
-    # --------------------------------
-    # FINAL CONFIRMATION
-    # --------------------------------
+    # ==================================================
+    # FINAL CONFIRMATION (BOOK)
+    # ==================================================
     if state.is_complete():
         if msg_lower in {"yes", "confirm"}:
             if not check_availability(state.date, state.time, doctor_id):
@@ -164,34 +175,25 @@ def run_agent(user_message: str, state: BookingState) -> str:
             f"Reply with yes or no."
         )
 
-    # --------------------------------
-    # FLEXIBLE TIME
-    # --------------------------------
+    # ==================================================
+    # FLEXIBLE TIME (RULE-BASED)
+    # ==================================================
     if state.intent == "BOOK" and state.date and not state.time:
         flexible = parse_flexible_time(msg)
         if flexible:
             state.pending_time = flexible
             return f"Do you mean {flexible}? Please confirm."
 
-    # --------------------------------
-    # GEMINI EXTRACTION
-    # --------------------------------
-    extracted = extract_with_gemini(msg)
-    if extracted is None:
-        return "⚠️ I’m having trouble understanding right now. Please try again shortly."
+    # ==================================================
+    # GEMINI FALLBACK — INTENT ONLY
+    # ==================================================
+    intent = extract_intent_with_gemini(msg)
+    if intent in {"BOOK", "CANCEL", "RESCHEDULE"}:
+        state.intent = intent
 
-    if extracted.get("intent") == "BOOK":
-        state.intent = "BOOK"
-
-    if extracted.get("date"):
-        state.date = extracted["date"]
-
-    if extracted.get("time") and is_valid_time(extracted["time"]):
-        state.time = extracted["time"]
-
-    # --------------------------------
-    # ASK MISSING INFORMATION
-    # --------------------------------
+    # ==================================================
+    # ASK MISSING INFORMATION (BOOK)
+    # ==================================================
     if state.intent == "BOOK" and not state.date:
         return "Sure 🙂 What date would you like to book?"
 
@@ -203,5 +205,12 @@ def run_agent(user_message: str, state: BookingState) -> str:
 
     if state.intent == "BOOK" and not state.patient_phone:
         return "Please share a contact phone number."
+
+    # CANCEL / RESCHEDULE placeholders (Phase 4.2+)
+    if state.intent == "CANCEL":
+        return "I’ll help you cancel your appointment shortly."
+
+    if state.intent == "RESCHEDULE":
+        return "I’ll help you reschedule your appointment shortly."
 
     return "How can I help you today?"
