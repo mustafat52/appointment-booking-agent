@@ -1,7 +1,7 @@
 import os
 import json
 import re
-from datetime import date
+from datetime import date, datetime, timedelta
 
 import google.generativeai as genai
 
@@ -25,17 +25,19 @@ model = genai.GenerativeModel(MODEL_NAME)
 TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 CONTROL_WORDS = {"yes", "no", "confirm", "ok", "okay"}
 
-# Phase 4.1 intent keywords
 CANCEL_KEYWORDS = {"cancel", "delete", "remove", "drop"}
 RESCHEDULE_KEYWORDS = {"reschedule", "change", "move", "shift", "modify"}
 
 
+# ===============================
+# Helpers
+# ===============================
 def is_valid_time(value: str | None) -> bool:
     return bool(value and TIME_PATTERN.match(value))
 
 
 # -------------------------------
-# Flexible time parsing (NO AI)
+# Flexible time parsing
 # -------------------------------
 def parse_flexible_time(text: str) -> str | None:
     text = text.lower().strip()
@@ -57,12 +59,73 @@ def parse_flexible_time(text: str) -> str | None:
 
 
 # -------------------------------
-# Gemini extraction (intent only)
+# Flexible date parsing
 # -------------------------------
-def extract_intent_with_gemini(user_message: str):
-    prompt = f"""
-You are an intent classification system.
+MONTHS = {
+    "jan": 1, "january": 1,
+    "feb": 2, "february": 2,
+    "mar": 3, "march": 3,
+    "apr": 4, "april": 4,
+    "may": 5,
+    "jun": 6, "june": 6,
+    "jul": 7, "july": 7,
+    "aug": 8, "august": 8,
+    "sep": 9, "september": 9,
+    "oct": 10, "october": 10,
+    "nov": 11, "november": 11,
+    "dec": 12, "december": 12,
+}
 
+
+def parse_flexible_date(text: str) -> str | None:
+    text = text.lower().strip()
+    today = datetime.today()
+
+    if "today" in text:
+        return today.strftime("%Y-%m-%d")
+
+    if "day after tomorrow" in text:
+        return (today + timedelta(days=2)).strftime("%Y-%m-%d")
+
+    if "tomorrow" in text:
+        return (today + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    numeric = re.search(r"\b(\d{1,2})[/-](\d{1,2})\b", text)
+    if numeric:
+        day, month = map(int, numeric.groups())
+        year = today.year
+        try:
+            candidate = datetime(year, month, day)
+            if candidate.date() < today.date():
+                candidate = datetime(year + 1, month, day)
+            return candidate.strftime("%Y-%m-%d")
+        except ValueError:
+            return None
+
+    for name, month in MONTHS.items():
+        if name in text:
+            day_match = re.search(r"\b(\d{1,2})(st|nd|rd|th)?\b", text)
+            if not day_match:
+                return None
+
+            day = int(day_match.group(1))
+            year = today.year
+            try:
+                candidate = datetime(year, month, day)
+                if candidate.date() < today.date():
+                    candidate = datetime(year + 1, month, day)
+                return candidate.strftime("%Y-%m-%d")
+            except ValueError:
+                return None
+
+    return None
+
+
+# -------------------------------
+# Gemini intent fallback ONLY
+# -------------------------------
+def extract_intent_with_gemini(user_message: str) -> str:
+    prompt = f"""
 Return ONLY valid JSON.
 
 Schema:
@@ -71,65 +134,73 @@ Schema:
 Message:
 {user_message}
 """
+
     try:
         response = model.generate_content(prompt)
         text = response.text.strip()
         if text.startswith("```"):
             text = text.replace("```json", "").replace("```", "").strip()
-        data = json.loads(text)
-        return data.get("intent", "UNKNOWN")
+        return json.loads(text).get("intent", "UNKNOWN")
     except Exception:
         return "UNKNOWN"
 
 
-# -------------------------------
+# ===============================
 # Agent main
-# -------------------------------
+# ===============================
 def run_agent(user_message: str, state: BookingState) -> str:
     msg = user_message.strip()
     msg_lower = msg.lower()
 
     doctor_id = state.doctor_id or DEFAULT_DOCTOR_ID
 
-    # ==================================================
-    # PHASE 4.1 — INTENT DETECTION (RULE-BASED FIRST)
-    # ==================================================
-    if any(word in msg_lower for word in CANCEL_KEYWORDS):
+    # -------------------------------
+    # Rule-based intent detection
+    # -------------------------------
+    if any(w in msg_lower for w in CANCEL_KEYWORDS):
         state.intent = "CANCEL"
 
-    elif any(word in msg_lower for word in RESCHEDULE_KEYWORDS):
+    elif any(w in msg_lower for w in RESCHEDULE_KEYWORDS):
         state.intent = "RESCHEDULE"
 
-    # ==================================================
-    # PHASE 4.3 — CANCEL FLOW
-    # ==================================================
+    # -------------------------------
+    # Cancel flow (Phase 4.3)
+    # -------------------------------
     if state.intent == "CANCEL":
-        if state.last_event_id is None:
+        if not state.last_event_id:
             state.intent = None
             return "I couldn’t find a recent appointment to cancel."
 
         if msg_lower in {"yes", "confirm"}:
-            cancel_appointment(
-                state.last_event_id,
-                state.last_doctor_id,
-            )
+            cancel_appointment(state.last_event_id, state.last_doctor_id)
             state.last_event_id = None
             state.last_doctor_id = None
             state.intent = None
             return "✅ Your appointment has been cancelled."
 
-        if msg_lower in {"no"}:
+        if msg_lower in {"no", "cancel"}:
             state.intent = None
             return "Okay, I won’t cancel the appointment."
 
-        return (
-            "You have a recent appointment. "
-            "Do you want to cancel it? (yes / no)"
-        )
+        return "Do you want to cancel your recent appointment? (yes / no)"
 
-    # ==================================================
-    # TIME CONFIRMATION HANDLING
-    # ==================================================
+    # -------------------------------
+    # Flexible date
+    # -------------------------------
+    if state.intent == "BOOK" and not state.date:
+        parsed_date = parse_flexible_date(msg)
+        if parsed_date:
+            state.date = parsed_date
+
+    # -------------------------------
+    # Flexible time
+    # -------------------------------
+    if state.intent == "BOOK" and state.date and not state.time:
+        flexible_time = parse_flexible_time(msg)
+        if flexible_time:
+            state.pending_time = flexible_time
+            return f"Do you mean {flexible_time}? Please confirm."
+
     if state.pending_time:
         if msg_lower in CONTROL_WORDS:
             state.time = state.pending_time
@@ -138,13 +209,11 @@ def run_agent(user_message: str, state: BookingState) -> str:
             state.pending_time = None
             return "Okay, please tell me the time again."
 
-    # ==================================================
-    # NAME & PHONE CAPTURE (BOOK FLOW)
-    # ==================================================
+    # -------------------------------
+    # Patient details
+    # -------------------------------
     if state.intent == "BOOK" and state.date and state.time:
         if state.patient_name is None:
-            if msg_lower in CONTROL_WORDS:
-                return "May I have the patient’s name?"
             state.patient_name = msg.title()
             return "Thanks. Please share a contact phone number."
 
@@ -155,9 +224,9 @@ def run_agent(user_message: str, state: BookingState) -> str:
             else:
                 return "Please enter a valid 10-digit phone number."
 
-    # ==================================================
-    # FINAL CONFIRMATION (BOOK)
-    # ==================================================
+    # -------------------------------
+    # Final confirmation
+    # -------------------------------
     if state.is_complete():
         if msg_lower in {"yes", "confirm"}:
             if not check_availability(state.date, state.time, doctor_id):
@@ -172,7 +241,6 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 state.patient_phone,
             )
 
-            # Phase 4.2 — remember last booked appointment
             state.last_event_id = booking["event_id"]
             state.last_doctor_id = doctor_id
             state.reset()
@@ -183,7 +251,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 f"⏰ Time: {booking['time']}"
             )
 
-        if msg_lower in {"no"}:
+        if msg_lower in {"no", "cancel"}:
             state.reset()
             return "Okay, I’ve cancelled the booking process."
 
@@ -196,38 +264,20 @@ def run_agent(user_message: str, state: BookingState) -> str:
             f"Reply with yes or no."
         )
 
-    # ==================================================
-    # FLEXIBLE TIME (RULE-BASED)
-    # ==================================================
-    if state.intent == "BOOK" and state.date and not state.time:
-        flexible = parse_flexible_time(msg)
-        if flexible:
-            state.pending_time = flexible
-            return f"Do you mean {flexible}? Please confirm."
-
-    # ==================================================
-    # GEMINI FALLBACK — INTENT ONLY
-    # ==================================================
+    # -------------------------------
+    # Gemini fallback (intent only)
+    # -------------------------------
     intent = extract_intent_with_gemini(msg)
-    if intent in {"BOOK", "CANCEL", "RESCHEDULE"}:
+    if intent != "UNKNOWN":
         state.intent = intent
 
-    # ==================================================
-    # ASK MISSING INFORMATION (BOOK)
-    # ==================================================
+    # -------------------------------
+    # Ask missing info
+    # -------------------------------
     if state.intent == "BOOK" and not state.date:
         return "Sure 🙂 What date would you like to book?"
 
     if state.intent == "BOOK" and not state.time:
         return "What time would you prefer? (e.g., 10 in the morning)"
-
-    if state.intent == "BOOK" and not state.patient_name:
-        return "May I have the patient’s name?"
-
-    if state.intent == "BOOK" and not state.patient_phone:
-        return "Please share a contact phone number."
-
-    if state.intent == "RESCHEDULE":
-        return "I’ll help you reschedule your appointment shortly."
 
     return "How can I help you today?"
