@@ -1,17 +1,21 @@
 class BookingState:
     def __init__(self):
-        # Phase 1
+        # Phase 1: booking basics
         self.intent = None
         self.date = None
         self.time = None
 
-        # Phase 2 / 3
+        # Phase 2: patient info
         self.patient_name = None
         self.patient_phone = None
         self.pending_time = None
 
-        # Phase 3 (multi-doctor)
+        # Phase 3: multi-doctor
         self.doctor_id = None
+
+        # Phase 4.2: last appointment memory
+        self.last_event_id = None
+        self.last_doctor_id = None
 
         self.confirmed = False
 
@@ -25,6 +29,7 @@ class BookingState:
         )
 
     def reset(self):
+        # Reset only conversation-specific fields
         self.intent = None
         self.date = None
         self.time = None
@@ -33,6 +38,8 @@ class BookingState:
         self.patient_phone = None
         self.pending_time = None
 
-        # DO NOT reset doctor_id here
-        # It comes from the URL (/book/{doctor_id})
+        # ❗ DO NOT reset:
+        # - doctor_id (comes from URL)
+        # - last_event_id / last_doctor_id (needed for cancel/reschedule)
+
         self.confirmed = False

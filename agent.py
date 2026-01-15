@@ -154,6 +154,10 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 state.patient_name,
                 state.patient_phone,
             )
+
+            # Phase 4.2 — remember last booked appointment
+            state.last_event_id = booking["event_id"]
+            state.last_doctor_id = doctor_id
             state.reset()
 
             return (
