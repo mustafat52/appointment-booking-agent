@@ -134,7 +134,6 @@ Schema:
 Message:
 {user_message}
 """
-
     try:
         response = model.generate_content(prompt)
         text = response.text.strip()
@@ -164,7 +163,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
         state.intent = "RESCHEDULE"
 
     # -------------------------------
-    # Cancel flow (Phase 4.3)
+    # Cancel flow
     # -------------------------------
     if state.intent == "CANCEL":
         if not state.last_event_id:
@@ -178,7 +177,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
             state.intent = None
             return "✅ Your appointment has been cancelled."
 
-        if msg_lower in {"no", "cancel"}:
+        if msg_lower in {"no"}:
             state.intent = None
             return "Okay, I won’t cancel the appointment."
 
@@ -210,10 +209,12 @@ def run_agent(user_message: str, state: BookingState) -> str:
             return "Okay, please tell me the time again."
 
     # -------------------------------
-    # Patient details
+    # Patient details (FIXED)
     # -------------------------------
     if state.intent == "BOOK" and state.date and state.time:
         if state.patient_name is None:
+            if msg_lower in CONTROL_WORDS:
+                return "May I have the patient’s name?"
             state.patient_name = msg.title()
             return "Thanks. Please share a contact phone number."
 
@@ -251,7 +252,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 f"⏰ Time: {booking['time']}"
             )
 
-        if msg_lower in {"no", "cancel"}:
+        if msg_lower in {"no"}:
             state.reset()
             return "Okay, I’ve cancelled the booking process."
 
