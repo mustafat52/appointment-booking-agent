@@ -16,14 +16,11 @@ def _get_doctor(doctor_id: str):
 
 
 def check_availability(date_str: str, time_str: str, doctor_id: str) -> bool:
-    print("CHECKING AVAILABILITY:", date_str, time_str, doctor_id)
-
     credentials = oauth_store.get("credentials")
     if not credentials:
         raise RuntimeError("Calendar not connected")
 
     doctor = _get_doctor(doctor_id)
-
     service = build_calendar_service(credentials)
     tz = pytz.timezone(TIMEZONE)
 
@@ -35,11 +32,9 @@ def check_availability(date_str: str, time_str: str, doctor_id: str) -> bool:
     buffer_minutes = doctor["buffer_minutes"]
     end_dt = start_dt + timedelta(minutes=duration)
 
-    # ❌ Working day check
     if start_dt.weekday() not in doctor["working_days"]:
         return False
 
-    # ❌ Working hours check
     wh_start = datetime.strptime(
         doctor["working_hours"]["start"], "%H:%M"
     ).time()
@@ -50,7 +45,6 @@ def check_availability(date_str: str, time_str: str, doctor_id: str) -> bool:
     if not (wh_start <= start_dt.time() and end_dt.time() <= wh_end):
         return False
 
-    # ✅ Calendar overlap
     events = service.events().list(
         calendarId=doctor["calendar_id"],
         timeMin=(start_dt - timedelta(minutes=buffer_minutes))
@@ -78,7 +72,6 @@ def book_appointment(
         raise RuntimeError("Calendar not connected")
 
     doctor = _get_doctor(doctor_id)
-
     service = build_calendar_service(credentials)
     tz = pytz.timezone(TIMEZONE)
 
@@ -114,3 +107,20 @@ def book_appointment(
         "time": time_str,
         "calendar_link": created_event.get("htmlLink"),
     }
+
+
+# ===============================
+# Phase 4.3 — Cancel appointment
+# ===============================
+def cancel_appointment(event_id: str, doctor_id: str) -> None:
+    credentials = oauth_store.get("credentials")
+    if not credentials:
+        raise RuntimeError("Calendar not connected")
+
+    doctor = _get_doctor(doctor_id)
+    service = build_calendar_service(credentials)
+
+    service.events().delete(
+        calendarId=doctor["calendar_id"],
+        eventId=event_id,
+    ).execute()

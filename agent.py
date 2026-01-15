@@ -6,7 +6,7 @@ from datetime import date
 import google.generativeai as genai
 
 from state import BookingState
-from tools import check_availability, book_appointment
+from tools import check_availability, book_appointment, cancel_appointment
 from doctor_config import DEFAULT_DOCTOR_ID
 
 
@@ -57,8 +57,7 @@ def parse_flexible_time(text: str) -> str | None:
 
 
 # -------------------------------
-# Gemini extraction (guarded)
-# Used ONLY if rule-based intent fails
+# Gemini extraction (intent only)
 # -------------------------------
 def extract_intent_with_gemini(user_message: str):
     prompt = f"""
@@ -72,7 +71,6 @@ Schema:
 Message:
 {user_message}
 """
-
     try:
         response = model.generate_content(prompt)
         text = response.text.strip()
@@ -98,16 +96,35 @@ def run_agent(user_message: str, state: BookingState) -> str:
     # ==================================================
     if any(word in msg_lower for word in CANCEL_KEYWORDS):
         state.intent = "CANCEL"
-        return (
-            "I understand you want to cancel an appointment. "
-            "I’ll help with that shortly."
-        )
 
-    if any(word in msg_lower for word in RESCHEDULE_KEYWORDS):
+    elif any(word in msg_lower for word in RESCHEDULE_KEYWORDS):
         state.intent = "RESCHEDULE"
+
+    # ==================================================
+    # PHASE 4.3 — CANCEL FLOW
+    # ==================================================
+    if state.intent == "CANCEL":
+        if state.last_event_id is None:
+            state.intent = None
+            return "I couldn’t find a recent appointment to cancel."
+
+        if msg_lower in {"yes", "confirm"}:
+            cancel_appointment(
+                state.last_event_id,
+                state.last_doctor_id,
+            )
+            state.last_event_id = None
+            state.last_doctor_id = None
+            state.intent = None
+            return "✅ Your appointment has been cancelled."
+
+        if msg_lower in {"no"}:
+            state.intent = None
+            return "Okay, I won’t cancel the appointment."
+
         return (
-            "I understand you want to reschedule an appointment. "
-            "I’ll help with that shortly."
+            "You have a recent appointment. "
+            "Do you want to cancel it? (yes / no)"
         )
 
     # ==================================================
@@ -166,7 +183,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 f"⏰ Time: {booking['time']}"
             )
 
-        if msg_lower in {"no", "cancel"}:
+        if msg_lower in {"no"}:
             state.reset()
             return "Okay, I’ve cancelled the booking process."
 
@@ -209,10 +226,6 @@ def run_agent(user_message: str, state: BookingState) -> str:
 
     if state.intent == "BOOK" and not state.patient_phone:
         return "Please share a contact phone number."
-
-    # CANCEL / RESCHEDULE placeholders (Phase 4.2+)
-    if state.intent == "CANCEL":
-        return "I’ll help you cancel your appointment shortly."
 
     if state.intent == "RESCHEDULE":
         return "I’ll help you reschedule your appointment shortly."
