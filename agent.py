@@ -25,12 +25,13 @@ model = genai.GenerativeModel(MODEL_NAME)
 TIME_PATTERN = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 CONTROL_WORDS = {"yes", "no", "confirm", "ok", "okay"}
 
+BOOK_KEYWORDS = {"book", "appointment", "schedule"}
 CANCEL_KEYWORDS = {"cancel", "delete", "remove", "drop"}
 RESCHEDULE_KEYWORDS = {"reschedule", "change", "move", "shift", "modify"}
 
 
 # ===============================
-# Helpers
+# Flexible time parsing
 # ===============================
 def parse_flexible_time(text: str) -> str | None:
     text = text.lower().strip()
@@ -46,9 +47,13 @@ def parse_flexible_time(text: str) -> str | None:
         return f"{hour:02d}:00"
     if "afternoon" in text or "evening" in text or "night" in text:
         return f"{hour + 12:02d}:00"
+
     return None
 
 
+# ===============================
+# Flexible date parsing
+# ===============================
 MONTHS = {
     "jan": 1, "january": 1,
     "feb": 2, "february": 2,
@@ -71,6 +76,7 @@ def parse_flexible_date(text: str) -> str | None:
 
     if "today" in text:
         return today.strftime("%Y-%m-%d")
+
     if "tomorrow" in text:
         return (today + timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -88,6 +94,7 @@ def parse_flexible_date(text: str) -> str | None:
                 return d.strftime("%Y-%m-%d")
             except ValueError:
                 return None
+
     return None
 
 
@@ -101,7 +108,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
     doctor_id = state.doctor_id or DEFAULT_DOCTOR_ID
 
     # -------------------------------
-    # Intent detection
+    # Intent detection (RULE-BASED)
     # -------------------------------
     if any(w in msg_lower for w in CANCEL_KEYWORDS):
         state.intent = "CANCEL"
@@ -109,8 +116,11 @@ def run_agent(user_message: str, state: BookingState) -> str:
     elif any(w in msg_lower for w in RESCHEDULE_KEYWORDS):
         state.intent = "RESCHEDULE"
 
+    elif any(w in msg_lower for w in BOOK_KEYWORDS):
+        state.intent = "BOOK"
+
     # -------------------------------
-    # Cancel flow (4.3)
+    # Cancel flow (Phase 4.3)
     # -------------------------------
     if state.intent == "CANCEL":
         if not state.last_event_id:
@@ -131,7 +141,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
         return "Do you want to cancel your recent appointment? (yes / no)"
 
     # -------------------------------
-    # Reschedule flow (4.4 — FIXED)
+    # Reschedule flow (Phase 4.4)
     # -------------------------------
     if state.intent == "RESCHEDULE":
         if not state.last_event_id:
@@ -152,7 +162,6 @@ def run_agent(user_message: str, state: BookingState) -> str:
             else:
                 return "What new time would you prefer?"
 
-        # ✅ FINAL RECONFIRMATION (CRITICAL FIX)
         if msg_lower in {"yes", "confirm"}:
             cancel_appointment(state.last_event_id, state.last_doctor_id)
 
@@ -182,7 +191,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
         )
 
     # -------------------------------
-    # BOOK flow (unchanged)
+    # Booking flow
     # -------------------------------
     if state.intent == "BOOK" and not state.date:
         parsed = parse_flexible_date(msg)
