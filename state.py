@@ -1,30 +1,49 @@
+# state.py
+
 class BookingState:
     def __init__(self):
-        # persistent info across flows
-        self.last_event_id = None
-        self.last_doctor_id = None
-        self.doctor_id = None
-        self.reset()
+        # Core intent
+        self.intent = None  # BOOK | CANCEL | RESCHEDULE
 
-    def reset(self):
-        self.intent = None
-
-        # booking flow
+        # Booking details
         self.date = None
         self.time = None
-        self.pending_time = None
         self.patient_name = None
         self.patient_phone = None
 
-        # reschedule flow (Phase 4.4)
+        # Doctor context
+        self.doctor_id = None
+
+        # Temporary helpers
+        self.pending_time = None
+
+        # Last appointment tracking (Phase 4)
+        self.last_event_id = None
+        self.last_doctor_id = None
+
+        # Reschedule flow
         self.reschedule_date = None
         self.reschedule_time = None
+
+        # Compatibility with main.py
+        self.confirmed = False
 
     def is_complete(self):
         return (
             self.intent == "BOOK"
-            and self.date
-            and self.time
-            and self.patient_name
-            and self.patient_phone
+            and self.date is not None
+            and self.time is not None
+            and self.patient_name is not None
+            and self.patient_phone is not None
         )
+
+    def reset(self):
+        self.intent = None
+        self.date = None
+        self.time = None
+        self.patient_name = None
+        self.patient_phone = None
+        self.pending_time = None
+        self.reschedule_date = None
+        self.reschedule_time = None
+        self.confirmed = False
