@@ -87,15 +87,21 @@ def run_agent(user_message: str, state: BookingState) -> str:
     # ---------------------------
     # Intent detection (SAFE)
     # ---------------------------
+# ===============================
+# INTENT DETECTION (SAFE)
+# ===============================
     if state.intent is None:
         if any(w in msg_lower for w in CANCEL_KEYWORDS):
             state.intent = "CANCEL"
+
         elif any(w in msg_lower for w in RESCHEDULE_KEYWORDS):
             state.intent = "RESCHEDULE"
-        elif "book" in msg_lower:
+
+        elif any(word in msg_lower for word in ["book", "appointment", "schedule"]):
             state.intent = "BOOK"
+
         else:
-            return "How can I help you today?"
+            return "Hello 🙂 How can I help you?"
 
     # ===========================
     # CANCEL
