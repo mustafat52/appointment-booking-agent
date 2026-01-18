@@ -116,42 +116,23 @@ def run_agent(user_message: str, state: BookingState) -> str:
         return "Hello 🙂 How can I help you today?"
 
     # ---------------------------
-    # NAME (ONLY IF MISSING)
-    # ---------------------------
-    if not state.patient_name and extracted["patient_name"]:
-        if extracted["patient_name"].lower() not in CONTROL_WORDS:
-            state.patient_name = extracted["patient_name"].title()
-
-    # ---------------------------
-    # PHONE (ONLY IF MISSING)
-    # ---------------------------
-    if not state.patient_phone and extracted["patient_phone"]:
-        digits = re.sub(r"\D", "", extracted["patient_phone"])
-        if len(digits) == 10:
-            state.patient_phone = digits
-
-    # ---------------------------
-    # DATE (ONLY IF NOT SET)
+    # DATE (ONLY IF MISSING)
     # ---------------------------
     if state.intent == "BOOK" and not state.date:
-        date_source = extracted["date_text"] or msg
-        parsed_date = normalize_date(date_source)
-        if parsed_date:
-            state.date = parsed_date
+        parsed = normalize_date(extracted["date_text"] or msg)
+        if parsed:
+            state.date = parsed
 
     if state.intent == "RESCHEDULE" and not state.reschedule_date:
-        date_source = extracted["date_text"] or msg
-        parsed_date = normalize_date(date_source)
-        if parsed_date:
-            state.reschedule_date = parsed_date
+        parsed = normalize_date(extracted["date_text"] or msg)
+        if parsed:
+            state.reschedule_date = parsed
 
     # ---------------------------
-    # TIME (ONLY IF NOT SET)
+    # TIME (ONLY IF MISSING)
     # ---------------------------
     if state.intent == "BOOK" and not state.time:
-        time_source = extracted["time_text"] or msg
-        time_value, ambiguous = normalize_time(time_source)
-
+        time_value, ambiguous = normalize_time(extracted["time_text"] or msg)
         if time_value:
             state.time = time_value
             state.awaiting_clarification = False
@@ -159,14 +140,41 @@ def run_agent(user_message: str, state: BookingState) -> str:
             state.awaiting_clarification = True
 
     if state.intent == "RESCHEDULE" and not state.reschedule_time:
-        time_source = extracted["time_text"] or msg
-        time_value, ambiguous = normalize_time(time_source)
-
+        time_value, ambiguous = normalize_time(extracted["time_text"] or msg)
         if time_value:
             state.reschedule_time = time_value
             state.awaiting_clarification = False
         elif ambiguous:
             state.awaiting_clarification = True
+
+    # ---------------------------
+    # NAME (LLM + FALLBACK)
+    # ---------------------------
+    if not state.patient_name:
+        if extracted["patient_name"]:
+            if extracted["patient_name"].lower() not in CONTROL_WORDS:
+                state.patient_name = extracted["patient_name"].title()
+        else:
+            if (
+                msg not in CONTROL_WORDS
+                and not re.search(r"\d", msg)
+                and not normalize_time(msg)[0]
+                and not normalize_date(msg)
+            ):
+                state.patient_name = user_message.strip().title()
+
+    # ---------------------------
+    # PHONE (LLM + FALLBACK)
+    # ---------------------------
+    if not state.patient_phone:
+        if extracted["patient_phone"]:
+            digits = re.sub(r"\D", "", extracted["patient_phone"])
+            if len(digits) == 10:
+                state.patient_phone = digits
+        else:
+            digits = re.sub(r"\D", "", msg)
+            if len(digits) == 10:
+                state.patient_phone = digits
 
     # ---------------------------
     # CANCEL
