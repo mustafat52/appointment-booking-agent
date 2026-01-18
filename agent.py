@@ -104,12 +104,12 @@ def run_agent(user_message: str, state: BookingState) -> str:
         state.intent = extracted["intent"]
 
     if state.intent is None:
-        if any(w in msg for w in BOOK_KEYWORDS):
-            state.intent = "BOOK"
+        if any(w in msg for w in RESCHEDULE_KEYWORDS):
+            state.intent = "RESCHEDULE"
         elif any(w in msg for w in CANCEL_KEYWORDS):
             state.intent = "CANCEL"
-        elif any(w in msg for w in RESCHEDULE_KEYWORDS):
-            state.intent = "RESCHEDULE"
+        elif any(w in msg for w in BOOK_KEYWORDS):
+            state.intent = "BOOK"
 
     if state.intent is None:
         return "Hello 🙂 How can I help you today?"
@@ -130,29 +130,44 @@ def run_agent(user_message: str, state: BookingState) -> str:
         return "Do you want to cancel your recent appointment? (yes / no)"
 
     # ---------------------------
-    # RESCHEDULE
+    # RESCHEDULE (FIXED)
     # ---------------------------
     if state.intent == "RESCHEDULE":
         if not state.last_event_id:
             state.reset()
             return "I couldn’t find any appointment to reschedule."
 
-        if not state.reschedule_date:
+        # --- Handle "same day" / "same time"
+        if "same day" in msg:
+            state.reschedule_date = state.date
+        elif not state.reschedule_date:
             parsed = normalize_date(msg)
             if parsed:
                 state.reschedule_date = parsed
-            else:
-                return "What new date would you like?"
 
-        if not state.reschedule_time:
+        if "same time" in msg:
+            state.reschedule_time = state.time
+        elif not state.reschedule_time:
             t, _ = normalize_time(msg)
             if t:
                 state.reschedule_time = t
-            else:
-                return "What new time would you prefer?"
+
+        if not state.reschedule_date:
+            return "What new date would you like?"
+
+        if not state.reschedule_time:
+            return "What new time would you prefer?"
+
+        # --- Check availability BEFORE confirm
+        if not check_availability(state.reschedule_date, state.reschedule_time, doctor_id):
+            state.reschedule_date = None
+            state.reschedule_time = None
+            return "❌ That slot is not available. Please choose another date or time."
 
         if msg in CONTROL_WORDS:
+            # 🔥 ACTUAL RESCHEDULE = cancel + book
             cancel_appointment(state.last_event_id, state.last_doctor_id)
+
             booking = book_appointment(
                 state.reschedule_date,
                 state.reschedule_time,
@@ -160,8 +175,16 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 state.patient_name,
                 state.patient_phone,
             )
-            state.reset()
-            return f"✅ Rescheduled to {booking['date']} at {booking['time']}"
+
+            state.last_event_id = booking["event_id"]
+            state.last_doctor_id = doctor_id
+            state.date = booking["date"]
+            state.time = booking["time"]
+            state.reschedule_date = None
+            state.reschedule_time = None
+            state.intent = None
+
+            return f"✅ Appointment rescheduled to {booking['date']} at {booking['time']}"
 
         return (
             f"Please confirm reschedule:\n"
@@ -171,7 +194,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
         )
 
     # ---------------------------
-    # BOOK (SEQUENTIAL)
+    # BOOK (UNCHANGED)
     # ---------------------------
     if not state.date:
         parsed = normalize_date(msg)
@@ -189,7 +212,6 @@ def run_agent(user_message: str, state: BookingState) -> str:
             state.expecting = "time"
             return "Could you please specify the exact time?"
 
-    # 🔹 CHECK AVAILABILITY BEFORE ASKING NAME
     if not check_availability(state.date, state.time, doctor_id):
         state.date = None
         state.time = None
