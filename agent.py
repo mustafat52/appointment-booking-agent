@@ -60,13 +60,10 @@ def normalize_date(text: str):
 
     months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
 
-    # 6th feb / 6 feb
     m1 = re.search(
         r"\b(\d{1,2})(st|nd|rd|th)?\b.*(" + "|".join(months) + r")",
         t
     )
-
-    # feb 6 / feb 6th
     m2 = re.search(
         r"\b(" + "|".join(months) + r")\b.*(\d{1,2})(st|nd|rd|th)?",
         t
@@ -101,11 +98,12 @@ def run_agent(user_message: str, state: BookingState) -> str:
 
     extracted = extract_entities(user_message)
 
-    # ---- INTENT (LLM FIRST) ----
+    # ---------------------------
+    # INTENT (LLM + FALLBACK)
+    # ---------------------------
     if extracted["intent"]:
         state.intent = extracted["intent"]
 
-    # ---- INTENT FALLBACK ----
     if state.intent is None:
         if any(w in msg for w in BOOK_KEYWORDS):
             state.intent = "BOOK"
@@ -114,40 +112,61 @@ def run_agent(user_message: str, state: BookingState) -> str:
         elif any(w in msg for w in RESCHEDULE_KEYWORDS):
             state.intent = "RESCHEDULE"
 
-    # ---- INTENT GATE ----
     if state.intent is None:
         return "Hello 🙂 How can I help you today?"
 
-    # ---- NAME ----
-    if extracted["patient_name"] and not state.patient_name:
+    # ---------------------------
+    # NAME (ONLY IF MISSING)
+    # ---------------------------
+    if not state.patient_name and extracted["patient_name"]:
         if extracted["patient_name"].lower() not in CONTROL_WORDS:
             state.patient_name = extracted["patient_name"].title()
 
-    # ---- PHONE ----
-    if extracted["patient_phone"] and not state.patient_phone:
+    # ---------------------------
+    # PHONE (ONLY IF MISSING)
+    # ---------------------------
+    if not state.patient_phone and extracted["patient_phone"]:
         digits = re.sub(r"\D", "", extracted["patient_phone"])
         if len(digits) == 10:
             state.patient_phone = digits
 
-    # ---- DATE (LLM + RAW FALLBACK) ----
-    date_source = extracted["date_text"] or msg
-    parsed_date = normalize_date(date_source)
-    if parsed_date:
-        if state.intent == "RESCHEDULE":
-            state.reschedule_date = parsed_date
-        else:
+    # ---------------------------
+    # DATE (ONLY IF NOT SET)
+    # ---------------------------
+    if state.intent == "BOOK" and not state.date:
+        date_source = extracted["date_text"] or msg
+        parsed_date = normalize_date(date_source)
+        if parsed_date:
             state.date = parsed_date
 
-    # ---- TIME (LLM + RAW FALLBACK) ----
-    time_source = extracted["time_text"] or msg
-    time_value, ambiguous = normalize_time(time_source)
-    if ambiguous:
-        state.awaiting_clarification = True
-    elif time_value:
-        if state.intent == "RESCHEDULE":
-            state.reschedule_time = time_value
-        else:
+    if state.intent == "RESCHEDULE" and not state.reschedule_date:
+        date_source = extracted["date_text"] or msg
+        parsed_date = normalize_date(date_source)
+        if parsed_date:
+            state.reschedule_date = parsed_date
+
+    # ---------------------------
+    # TIME (ONLY IF NOT SET)
+    # ---------------------------
+    if state.intent == "BOOK" and not state.time:
+        time_source = extracted["time_text"] or msg
+        time_value, ambiguous = normalize_time(time_source)
+
+        if time_value:
             state.time = time_value
+            state.awaiting_clarification = False
+        elif ambiguous:
+            state.awaiting_clarification = True
+
+    if state.intent == "RESCHEDULE" and not state.reschedule_time:
+        time_source = extracted["time_text"] or msg
+        time_value, ambiguous = normalize_time(time_source)
+
+        if time_value:
+            state.reschedule_time = time_value
+            state.awaiting_clarification = False
+        elif ambiguous:
+            state.awaiting_clarification = True
 
     # ---------------------------
     # CANCEL
