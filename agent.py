@@ -95,11 +95,10 @@ def normalize_date(text: str):
 def run_agent(user_message: str, state: BookingState) -> str:
     msg = user_message.strip().lower()
     doctor_id = state.doctor_id or DEFAULT_DOCTOR_ID
-
     extracted = extract_entities(user_message)
 
     # ---------------------------
-    # INTENT (LLM + FALLBACK)
+    # INTENT
     # ---------------------------
     if extracted["intent"]:
         state.intent = extracted["intent"]
@@ -116,67 +115,6 @@ def run_agent(user_message: str, state: BookingState) -> str:
         return "Hello 🙂 How can I help you today?"
 
     # ---------------------------
-    # DATE (ONLY IF MISSING)
-    # ---------------------------
-    if state.intent == "BOOK" and not state.date:
-        parsed = normalize_date(extracted["date_text"] or msg)
-        if parsed:
-            state.date = parsed
-
-    if state.intent == "RESCHEDULE" and not state.reschedule_date:
-        parsed = normalize_date(extracted["date_text"] or msg)
-        if parsed:
-            state.reschedule_date = parsed
-
-    # ---------------------------
-    # TIME (ONLY IF MISSING)
-    # ---------------------------
-    if state.intent == "BOOK" and not state.time:
-        time_value, ambiguous = normalize_time(extracted["time_text"] or msg)
-        if time_value:
-            state.time = time_value
-            state.awaiting_clarification = False
-        elif ambiguous:
-            state.awaiting_clarification = True
-
-    if state.intent == "RESCHEDULE" and not state.reschedule_time:
-        time_value, ambiguous = normalize_time(extracted["time_text"] or msg)
-        if time_value:
-            state.reschedule_time = time_value
-            state.awaiting_clarification = False
-        elif ambiguous:
-            state.awaiting_clarification = True
-
-    # ---------------------------
-    # NAME (LLM + FALLBACK)
-    # ---------------------------
-    if not state.patient_name:
-        if extracted["patient_name"]:
-            if extracted["patient_name"].lower() not in CONTROL_WORDS:
-                state.patient_name = extracted["patient_name"].title()
-        else:
-            if (
-                msg not in CONTROL_WORDS
-                and not re.search(r"\d", msg)
-                and not normalize_time(msg)[0]
-                and not normalize_date(msg)
-            ):
-                state.patient_name = user_message.strip().title()
-
-    # ---------------------------
-    # PHONE (LLM + FALLBACK)
-    # ---------------------------
-    if not state.patient_phone:
-        if extracted["patient_phone"]:
-            digits = re.sub(r"\D", "", extracted["patient_phone"])
-            if len(digits) == 10:
-                state.patient_phone = digits
-        else:
-            digits = re.sub(r"\D", "", msg)
-            if len(digits) == 10:
-                state.patient_phone = digits
-
-    # ---------------------------
     # CANCEL
     # ---------------------------
     if state.intent == "CANCEL":
@@ -186,8 +124,6 @@ def run_agent(user_message: str, state: BookingState) -> str:
 
         if msg in CONTROL_WORDS:
             cancel_appointment(state.last_event_id, state.last_doctor_id)
-            state.last_event_id = None
-            state.last_doctor_id = None
             state.reset()
             return "✅ Your appointment has been cancelled."
 
@@ -202,10 +138,18 @@ def run_agent(user_message: str, state: BookingState) -> str:
             return "I couldn’t find any appointment to reschedule."
 
         if not state.reschedule_date:
-            return "What new date would you like?"
+            parsed = normalize_date(msg)
+            if parsed:
+                state.reschedule_date = parsed
+            else:
+                return "What new date would you like?"
 
         if not state.reschedule_time:
-            return "What new time would you prefer?"
+            t, _ = normalize_time(msg)
+            if t:
+                state.reschedule_time = t
+            else:
+                return "What new time would you prefer?"
 
         if msg in CONTROL_WORDS:
             cancel_appointment(state.last_event_id, state.last_doctor_id)
@@ -216,8 +160,6 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 state.patient_name,
                 state.patient_phone,
             )
-            state.last_event_id = booking["event_id"]
-            state.last_doctor_id = doctor_id
             state.reset()
             return f"✅ Rescheduled to {booking['date']} at {booking['time']}"
 
@@ -229,26 +171,48 @@ def run_agent(user_message: str, state: BookingState) -> str:
         )
 
     # ---------------------------
-    # BOOK
+    # BOOK (SEQUENTIAL)
     # ---------------------------
     if not state.date:
-        return "What date would you like to book?"
+        parsed = normalize_date(msg)
+        if parsed:
+            state.date = parsed
+        else:
+            state.expecting = "date"
+            return "What date would you like to book?"
 
-    if state.awaiting_clarification or not state.time:
-        state.awaiting_clarification = False
-        return "Could you please specify the exact time?"
+    if not state.time:
+        t, _ = normalize_time(msg)
+        if t:
+            state.time = t
+        else:
+            state.expecting = "time"
+            return "Could you please specify the exact time?"
+
+    # 🔹 CHECK AVAILABILITY BEFORE ASKING NAME
+    if not check_availability(state.date, state.time, doctor_id):
+        state.date = None
+        state.time = None
+        state.expecting = "date"
+        return "❌ That slot is not available. Please choose another date and time."
 
     if not state.patient_name:
-        return "May I know the patient’s name?"
+        if state.expecting != "name":
+            state.expecting = "name"
+            return "May I know the patient’s name?"
+        state.patient_name = user_message.strip().title()
 
     if not state.patient_phone:
-        return "Please share a 10-digit contact number."
+        digits = re.sub(r"\D", "", msg)
+        if len(digits) == 10:
+            state.patient_phone = digits
+        else:
+            state.expecting = "phone"
+            return "Please share a 10-digit contact number."
+
+    state.expecting = "confirm"
 
     if msg in CONTROL_WORDS:
-        if not check_availability(state.date, state.time, doctor_id):
-            state.reset()
-            return "❌ That slot is not available."
-
         booking = book_appointment(
             state.date,
             state.time,
