@@ -1,61 +1,56 @@
 # agent.py
 
-import os
-import json
 import re
 from datetime import datetime, timedelta
 
-import google.generativeai as genai
-
+from extractor import extract_entities
 from state import BookingState
 from tools import check_availability, book_appointment, cancel_appointment
 from doctor_config import DEFAULT_DOCTOR_ID
 
 
-# ===============================
-# Gemini Config
-# ===============================
-GENAI_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "models/gemini-flash-latest")
-
-genai.configure(api_key=GENAI_API_KEY)
-model = genai.GenerativeModel(MODEL_NAME)
-
-
-# ===============================
-# Constants
-# ===============================
 CONTROL_WORDS = {"yes", "no", "confirm", "ok", "okay"}
-CANCEL_KEYWORDS = {"cancel", "delete", "remove", "drop"}
-RESCHEDULE_KEYWORDS = {"reschedule", "change", "move", "shift", "modify"}
 
 
-# ===============================
-# Helpers
-# ===============================
-def parse_time(text: str):
-    text = text.lower()
-    m = re.search(r"\b(\d{1,2})\b", text)
+def normalize_time(text: str):
+    if not text:
+        return None, False
+
+    t = text.lower()
+    m = re.search(r"\b(\d{1,2})\b", t)
     if not m:
-        return None
-    h = int(m.group(1))
-    if h < 1 or h > 12:
-        return None
-    if "pm" in text or "afternoon" in text or "evening" in text:
-        return f"{h+12:02d}:00"
-    return f"{h:02d}:00"
+        return None, True
+
+    hour = int(m.group(1))
+
+    if "morning" in t:
+        return ("00:00" if hour == 12 else f"{hour:02d}:00"), False
+
+    if "afternoon" in t or "evening" in t or "pm" in t:
+        if hour < 12:
+            hour += 12
+        return f"{hour:02d}:00", False
+
+    if "am" in t:
+        return ("00:00" if hour == 12 else f"{hour:02d}:00"), False
+
+    return None, True
 
 
-def parse_date(text: str):
-    text = text.lower()
+def normalize_date(text: str):
+    if not text:
+        return None
+
+    t = text.lower()
     today = datetime.today()
 
-    if "today" in text:
+    if "today" in t:
         return today.strftime("%Y-%m-%d")
-    if "tomorrow" in text:
+
+    if "tomorrow" in t:
         return (today + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    m = re.search(r"\b(\d{1,2})\b.*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)", text)
+    m = re.search(r"\b(\d{1,2})\b.*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)", t)
     if m:
         day = int(m.group(1))
         month = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"].index(m.group(2)) + 1
@@ -67,82 +62,92 @@ def parse_date(text: str):
             return d.strftime("%Y-%m-%d")
         except:
             return None
+
     return None
 
 
-# ===============================
-# Main Agent
-# ===============================
 def run_agent(user_message: str, state: BookingState) -> str:
-    msg = user_message.strip()
-    msg_lower = msg.lower()
+    print("\n================ NEW TURN ================")
+    print("👤 USER:", user_message)
+    print("📦 STATE BEFORE:", state.__dict__)
+
+    msg = user_message.strip().lower()
     doctor_id = state.doctor_id or DEFAULT_DOCTOR_ID
 
-    # ---------------------------
-    # Neutral greetings
-    # ---------------------------
-    if state.intent is None and msg_lower in {"hi", "hello", "hey"}:
-        return "Hello 🙂 How can I help you?"
+    extracted = extract_entities(user_message)
 
-    # ---------------------------
-    # Intent detection (SAFE)
-    # ---------------------------
-# ===============================
-# INTENT DETECTION (SAFE)
-# ===============================
-    if state.intent is None:
-        if any(w in msg_lower for w in CANCEL_KEYWORDS):
-            state.intent = "CANCEL"
+    # ---- STATE MERGE ----
+    if extracted["intent"]:
+        state.intent = extracted["intent"]
 
-        elif any(w in msg_lower for w in RESCHEDULE_KEYWORDS):
-            state.intent = "RESCHEDULE"
+    if extracted["patient_name"] and not state.patient_name:
+        state.patient_name = extracted["patient_name"].title()
 
-        elif any(word in msg_lower for word in ["book", "appointment", "schedule"]):
-            state.intent = "BOOK"
+    if extracted["patient_phone"] and not state.patient_phone:
+        digits = re.sub(r"\D", "", extracted["patient_phone"])
+        if len(digits) == 10:
+            state.patient_phone = digits
 
-        else:
-            return "Hello 🙂 How can I help you?"
+    if extracted["date_text"]:
+        parsed_date = normalize_date(extracted["date_text"])
+        if parsed_date:
+            if state.intent == "RESCHEDULE":
+                state.reschedule_date = parsed_date
+            else:
+                state.date = parsed_date
 
-    # ===========================
-    # CANCEL
-    # ===========================
+    if extracted["time_text"]:
+        time_value, ambiguous = normalize_time(extracted["time_text"])
+        if ambiguous:
+            state.awaiting_clarification = True
+        elif time_value:
+            if state.intent == "RESCHEDULE":
+                state.reschedule_time = time_value
+            else:
+                state.time = time_value
+
+    print("📦 STATE AFTER MERGE:", state.__dict__)
+
+    # ---- CANCEL ----
     if state.intent == "CANCEL":
         if not state.last_event_id:
-            state.intent = None
-            return "I couldn’t find any recent appointment to cancel."
+            state.reset()
+            response = "I couldn’t find any recent appointment to cancel."
+            print("🤖 RESPONSE:", response)
+            return response
 
-        if msg_lower in CONTROL_WORDS:
+        if msg in CONTROL_WORDS:
             cancel_appointment(state.last_event_id, state.last_doctor_id)
             state.last_event_id = None
             state.last_doctor_id = None
-            state.intent = None
-            return "✅ Your appointment has been cancelled."
+            state.reset()
+            response = "✅ Your appointment has been cancelled."
+            print("🤖 RESPONSE:", response)
+            return response
 
-        return "Do you want to cancel your recent appointment? (yes / no)"
+        response = "Do you want to cancel your recent appointment? (yes / no)"
+        print("🤖 RESPONSE:", response)
+        return response
 
-    # ===========================
-    # RESCHEDULE
-    # ===========================
+    # ---- RESCHEDULE ----
     if state.intent == "RESCHEDULE":
         if not state.last_event_id:
-            state.intent = None
-            return "I couldn’t find any appointment to reschedule."
+            state.reset()
+            response = "I couldn’t find any appointment to reschedule."
+            print("🤖 RESPONSE:", response)
+            return response
 
         if not state.reschedule_date:
-            d = parse_date(msg)
-            if d:
-                state.reschedule_date = d
-            else:
-                return "What new date would you like?"
+            response = "What new date would you like?"
+            print("🤖 RESPONSE:", response)
+            return response
 
         if not state.reschedule_time:
-            t = parse_time(msg)
-            if t:
-                state.reschedule_time = t
-            else:
-                return "What new time would you prefer?"
+            response = "What new time would you prefer?"
+            print("🤖 RESPONSE:", response)
+            return response
 
-        if msg_lower in CONTROL_WORDS:
+        if msg in CONTROL_WORDS:
             cancel_appointment(state.last_event_id, state.last_doctor_id)
             booking = book_appointment(
                 state.reschedule_date,
@@ -154,48 +159,47 @@ def run_agent(user_message: str, state: BookingState) -> str:
             state.last_event_id = booking["event_id"]
             state.last_doctor_id = doctor_id
             state.reset()
-            return f"✅ Rescheduled to {booking['date']} at {booking['time']}"
+            response = f"✅ Rescheduled to {booking['date']} at {booking['time']}"
+            print("🤖 RESPONSE:", response)
+            return response
 
-        return (
+        response = (
             f"Please confirm reschedule:\n"
             f"📅 {state.reschedule_date}\n"
             f"⏰ {state.reschedule_time}\n"
             f"(yes / no)"
         )
+        print("🤖 RESPONSE:", response)
+        return response
 
-    # ===========================
-    # BOOK
-    # ===========================
+    # ---- BOOK ----
     if not state.date:
-        d = parse_date(msg)
-        if d:
-            state.date = d
-        else:
-            return "What date would you like to book?"
+        response = "What date would you like to book?"
+        print("🤖 RESPONSE:", response)
+        return response
 
-    if not state.time:
-        t = parse_time(msg)
-        if t:
-            state.time = t
-        else:
-            return "What time would you prefer?"
+    if state.awaiting_clarification or not state.time:
+        state.awaiting_clarification = False
+        response = "Could you please specify the exact time?"
+        print("🤖 RESPONSE:", response)
+        return response
 
     if not state.patient_name:
-        if msg_lower in CONTROL_WORDS:
-            return "Please tell me the patient’s name."
-        state.patient_name = msg.title()
-        return "Please share a contact phone number."
+        response = "May I know the patient’s name?"
+        print("🤖 RESPONSE:", response)
+        return response
 
     if not state.patient_phone:
-        digits = re.sub(r"\D", "", msg)
-        if len(digits) != 10:
-            return "Please enter a valid 10-digit phone number."
-        state.patient_phone = digits
+        response = "Please share a 10-digit contact number."
+        print("🤖 RESPONSE:", response)
+        return response
 
-    if msg_lower in CONTROL_WORDS:
+    if msg in CONTROL_WORDS:
         if not check_availability(state.date, state.time, doctor_id):
             state.reset()
-            return "❌ That slot is not available."
+            response = "❌ That slot is not available."
+            print("🤖 RESPONSE:", response)
+            return response
 
         booking = book_appointment(
             state.date,
@@ -207,9 +211,11 @@ def run_agent(user_message: str, state: BookingState) -> str:
         state.last_event_id = booking["event_id"]
         state.last_doctor_id = doctor_id
         state.reset()
-        return f"✅ Appointment booked for {booking['date']} at {booking['time']}"
+        response = f"✅ Appointment booked for {booking['date']} at {booking['time']}"
+        print("🤖 RESPONSE:", response)
+        return response
 
-    return (
+    response = (
         f"Please confirm:\n"
         f"📅 {state.date}\n"
         f"⏰ {state.time}\n"
@@ -217,3 +223,5 @@ def run_agent(user_message: str, state: BookingState) -> str:
         f"📞 {state.patient_phone}\n"
         f"(yes / no)"
     )
+    print("🤖 RESPONSE:", response)
+    return response
