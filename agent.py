@@ -11,6 +11,11 @@ from doctor_config import DEFAULT_DOCTOR_ID
 
 CONTROL_WORDS = {"yes", "no", "confirm", "ok", "okay"}
 
+# 🔹 Intent fallback keywords (CRITICAL)
+BOOK_KEYWORDS = {"book", "appointment", "schedule"}
+CANCEL_KEYWORDS = {"cancel", "delete", "remove", "drop"}
+RESCHEDULE_KEYWORDS = {"reschedule", "change", "move", "shift", "modify"}
+
 
 # ---------------------------
 # Normalization helpers
@@ -54,7 +59,6 @@ def normalize_date(text: str):
     if "tomorrow" in t:
         return (today + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    # ✅ FIX: handle 4th, 21st, etc.
     m = re.search(
         r"\b(\d{1,2})(st|nd|rd|th)?\b.*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)",
         t
@@ -88,12 +92,11 @@ def run_agent(user_message: str, state: BookingState) -> str:
 
     extracted = extract_entities(user_message)
 
-    # ---- STATE MERGE ----
+    # ---- STATE MERGE (LLM FIRST) ----
     if extracted["intent"]:
         state.intent = extracted["intent"]
 
     if extracted["patient_name"] and not state.patient_name:
-        # avoid control words being treated as names
         if extracted["patient_name"].lower() not in CONTROL_WORDS:
             state.patient_name = extracted["patient_name"].title()
 
@@ -120,11 +123,18 @@ def run_agent(user_message: str, state: BookingState) -> str:
             else:
                 state.time = time_value
 
+    # ---- 🔥 INTENT FALLBACK (THIS FIXES THE LOOPING) ----
+    if state.intent is None:
+        if any(w in msg for w in BOOK_KEYWORDS):
+            state.intent = "BOOK"
+        elif any(w in msg for w in CANCEL_KEYWORDS):
+            state.intent = "CANCEL"
+        elif any(w in msg for w in RESCHEDULE_KEYWORDS):
+            state.intent = "RESCHEDULE"
+
     print("📦 STATE AFTER MERGE:", state.__dict__)
 
-    # ---------------------------
-    # ✅ INTENT GATE (CRITICAL FIX)
-    # ---------------------------
+    # ---- INTENT GATE ----
     if state.intent is None:
         response = "Hello 🙂 How can I help you today?"
         print("🤖 RESPONSE:", response)
@@ -199,7 +209,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
         return response
 
     # ---------------------------
-    # BOOK (PROPERLY GUARDED)
+    # BOOK
     # ---------------------------
     if state.intent == "BOOK":
 
