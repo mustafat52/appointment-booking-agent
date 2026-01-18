@@ -11,7 +11,6 @@ from doctor_config import DEFAULT_DOCTOR_ID
 
 CONTROL_WORDS = {"yes", "no", "confirm", "ok", "okay"}
 
-# 🔹 Intent fallback keywords (CRITICAL)
 BOOK_KEYWORDS = {"book", "appointment", "schedule"}
 CANCEL_KEYWORDS = {"cancel", "delete", "remove", "drop"}
 RESCHEDULE_KEYWORDS = {"reschedule", "change", "move", "shift", "modify"}
@@ -59,23 +58,37 @@ def normalize_date(text: str):
     if "tomorrow" in t:
         return (today + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    m = re.search(
-        r"\b(\d{1,2})(st|nd|rd|th)?\b.*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)",
+    months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
+
+    # Pattern 1: 6th feb / 6 feb
+    m1 = re.search(
+        r"\b(\d{1,2})(st|nd|rd|th)?\b.*(" + "|".join(months) + r")",
         t
     )
-    if m:
-        day = int(m.group(1))
-        month = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"].index(m.group(3)) + 1
-        year = today.year
-        try:
-            d = datetime(year, month, day)
-            if d.date() < today.date():
-                d = datetime(year + 1, month, day)
-            return d.strftime("%Y-%m-%d")
-        except:
-            return None
 
-    return None
+    # Pattern 2: feb 6 / feb 6th
+    m2 = re.search(
+        r"\b(" + "|".join(months) + r")\b.*(\d{1,2})(st|nd|rd|th)?",
+        t
+    )
+
+    if m1:
+        day = int(m1.group(1))
+        month = months.index(m1.group(3)) + 1
+    elif m2:
+        day = int(m2.group(2))
+        month = months.index(m2.group(1)) + 1
+    else:
+        return None
+
+    year = today.year
+    try:
+        d = datetime(year, month, day)
+        if d.date() < today.date():
+            d = datetime(year + 1, month, day)
+        return d.strftime("%Y-%m-%d")
+    except:
+        return None
 
 
 # ---------------------------
@@ -83,16 +96,12 @@ def normalize_date(text: str):
 # ---------------------------
 
 def run_agent(user_message: str, state: BookingState) -> str:
-    print("\n================ NEW TURN ================")
-    print("👤 USER:", user_message)
-    print("📦 STATE BEFORE:", state.__dict__)
-
     msg = user_message.strip().lower()
     doctor_id = state.doctor_id or DEFAULT_DOCTOR_ID
 
     extracted = extract_entities(user_message)
 
-    # ---- STATE MERGE (LLM FIRST) ----
+    # ---- STATE MERGE ----
     if extracted["intent"]:
         state.intent = extracted["intent"]
 
@@ -123,7 +132,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
             else:
                 state.time = time_value
 
-    # ---- 🔥 INTENT FALLBACK (THIS FIXES THE LOOPING) ----
+    # ---- INTENT FALLBACK ----
     if state.intent is None:
         if any(w in msg for w in BOOK_KEYWORDS):
             state.intent = "BOOK"
@@ -132,13 +141,9 @@ def run_agent(user_message: str, state: BookingState) -> str:
         elif any(w in msg for w in RESCHEDULE_KEYWORDS):
             state.intent = "RESCHEDULE"
 
-    print("📦 STATE AFTER MERGE:", state.__dict__)
-
     # ---- INTENT GATE ----
     if state.intent is None:
-        response = "Hello 🙂 How can I help you today?"
-        print("🤖 RESPONSE:", response)
-        return response
+        return "Hello 🙂 How can I help you today?"
 
     # ---------------------------
     # CANCEL
@@ -146,22 +151,16 @@ def run_agent(user_message: str, state: BookingState) -> str:
     if state.intent == "CANCEL":
         if not state.last_event_id:
             state.reset()
-            response = "I couldn’t find any recent appointment to cancel."
-            print("🤖 RESPONSE:", response)
-            return response
+            return "I couldn’t find any recent appointment to cancel."
 
         if msg in CONTROL_WORDS:
             cancel_appointment(state.last_event_id, state.last_doctor_id)
             state.last_event_id = None
             state.last_doctor_id = None
             state.reset()
-            response = "✅ Your appointment has been cancelled."
-            print("🤖 RESPONSE:", response)
-            return response
+            return "✅ Your appointment has been cancelled."
 
-        response = "Do you want to cancel your recent appointment? (yes / no)"
-        print("🤖 RESPONSE:", response)
-        return response
+        return "Do you want to cancel your recent appointment? (yes / no)"
 
     # ---------------------------
     # RESCHEDULE
@@ -169,19 +168,13 @@ def run_agent(user_message: str, state: BookingState) -> str:
     if state.intent == "RESCHEDULE":
         if not state.last_event_id:
             state.reset()
-            response = "I couldn’t find any appointment to reschedule."
-            print("🤖 RESPONSE:", response)
-            return response
+            return "I couldn’t find any appointment to reschedule."
 
         if not state.reschedule_date:
-            response = "What new date would you like?"
-            print("🤖 RESPONSE:", response)
-            return response
+            return "What new date would you like?"
 
         if not state.reschedule_time:
-            response = "What new time would you prefer?"
-            print("🤖 RESPONSE:", response)
-            return response
+            return "What new time would you prefer?"
 
         if msg in CONTROL_WORDS:
             cancel_appointment(state.last_event_id, state.last_doctor_id)
@@ -195,73 +188,53 @@ def run_agent(user_message: str, state: BookingState) -> str:
             state.last_event_id = booking["event_id"]
             state.last_doctor_id = doctor_id
             state.reset()
-            response = f"✅ Rescheduled to {booking['date']} at {booking['time']}"
-            print("🤖 RESPONSE:", response)
-            return response
+            return f"✅ Rescheduled to {booking['date']} at {booking['time']}"
 
-        response = (
+        return (
             f"Please confirm reschedule:\n"
             f"📅 {state.reschedule_date}\n"
             f"⏰ {state.reschedule_time}\n"
             f"(yes / no)"
         )
-        print("🤖 RESPONSE:", response)
-        return response
 
     # ---------------------------
     # BOOK
     # ---------------------------
-    if state.intent == "BOOK":
+    if not state.date:
+        return "What date would you like to book?"
 
-        if not state.date:
-            response = "What date would you like to book?"
-            print("🤖 RESPONSE:", response)
-            return response
+    if state.awaiting_clarification or not state.time:
+        state.awaiting_clarification = False
+        return "Could you please specify the exact time?"
 
-        if state.awaiting_clarification or not state.time:
-            state.awaiting_clarification = False
-            response = "Could you please specify the exact time?"
-            print("🤖 RESPONSE:", response)
-            return response
+    if not state.patient_name:
+        return "May I know the patient’s name?"
 
-        if not state.patient_name:
-            response = "May I know the patient’s name?"
-            print("🤖 RESPONSE:", response)
-            return response
+    if not state.patient_phone:
+        return "Please share a 10-digit contact number."
 
-        if not state.patient_phone:
-            response = "Please share a 10-digit contact number."
-            print("🤖 RESPONSE:", response)
-            return response
-
-        if msg in CONTROL_WORDS:
-            if not check_availability(state.date, state.time, doctor_id):
-                state.reset()
-                response = "❌ That slot is not available."
-                print("🤖 RESPONSE:", response)
-                return response
-
-            booking = book_appointment(
-                state.date,
-                state.time,
-                doctor_id,
-                state.patient_name,
-                state.patient_phone,
-            )
-            state.last_event_id = booking["event_id"]
-            state.last_doctor_id = doctor_id
+    if msg in CONTROL_WORDS:
+        if not check_availability(state.date, state.time, doctor_id):
             state.reset()
-            response = f"✅ Appointment booked for {booking['date']} at {booking['time']}"
-            print("🤖 RESPONSE:", response)
-            return response
+            return "❌ That slot is not available."
 
-        response = (
-            f"Please confirm:\n"
-            f"📅 {state.date}\n"
-            f"⏰ {state.time}\n"
-            f"👤 {state.patient_name}\n"
-            f"📞 {state.patient_phone}\n"
-            f"(yes / no)"
+        booking = book_appointment(
+            state.date,
+            state.time,
+            doctor_id,
+            state.patient_name,
+            state.patient_phone,
         )
-        print("🤖 RESPONSE:", response)
-        return response
+        state.last_event_id = booking["event_id"]
+        state.last_doctor_id = doctor_id
+        state.reset()
+        return f"✅ Appointment booked for {booking['date']} at {booking['time']}"
+
+    return (
+        f"Please confirm:\n"
+        f"📅 {state.date}\n"
+        f"⏰ {state.time}\n"
+        f"👤 {state.patient_name}\n"
+        f"📞 {state.patient_phone}\n"
+        f"(yes / no)"
+    )
