@@ -1,7 +1,7 @@
 # extractor.py
 
-import os
 import json
+import os
 import google.generativeai as genai
 
 GENAI_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
@@ -12,58 +12,79 @@ model = genai.GenerativeModel(MODEL_NAME)
 
 
 SYSTEM_PROMPT = """
-You are an information extraction engine for a doctor appointment assistant.
+You are an information extraction engine for a doctor appointment system.
 
-Rules:
-- Output STRICT JSON only
-- Do NOT guess missing values
-- Do NOT normalize date or time
-- Extract exactly what the user said
-- If unclear or missing, return null
+Your job:
+- Extract structured information from a single user message.
+- Do NOT make decisions.
+- Do NOT guess missing data.
+- Do NOT normalize dates or times.
+- If unsure, return null.
 
-Fields:
-intent: BOOK | CANCEL | RESCHEDULE | null
-date_text: string | null
-time_text: string | null
-patient_name: string | null
-patient_phone: string | null
+Return ONLY valid JSON in the exact schema below.
+No explanations. No markdown.
+
+Schema:
+{
+  "intent": "BOOK | CANCEL | RESCHEDULE | null",
+  "date_text": "string | null",
+  "time_text": "string | null",
+  "patient_name": "string | null",
+  "patient_phone": "string | null",
+  "confidence": "high | medium | low"
+}
 """
 
 
-def extract_entities(user_message: str) -> dict:
-    print("🔍 [Extractor] User message:", user_message)
+def extract_entities(user_message: str, current_intent: str | None = None) -> dict:
+    """
+    Phase-5 extractor.
+    Stateless. Safe. JSON-only.
+    """
 
     prompt = f"""
 {SYSTEM_PROMPT}
 
 User message:
-\"\"\"{user_message}\"\"\"
+"{user_message}"
+
+Current intent (if known):
+"{current_intent}"
 """
 
     try:
         response = model.generate_content(prompt)
-        raw_text = response.text.strip()
-        print("🧠 [Extractor] Raw LLM output:", raw_text)
+        text = response.text.strip()
 
-        data = json.loads(raw_text)
+        data = json.loads(text)
 
-    except Exception as e:
-        print("❌ [Extractor] Extraction failed:", str(e))
+        # ---- HARD SAFETY GUARDS ----
+        if not isinstance(data, dict):
+            raise ValueError("Invalid JSON")
+
+        for key in [
+            "intent",
+            "date_text",
+            "time_text",
+            "patient_name",
+            "patient_phone",
+            "confidence",
+        ]:
+            if key not in data:
+                data[key] = None
+
+        if data["confidence"] not in {"high", "medium", "low"}:
+            data["confidence"] = "low"
+
+        return data
+
+    except Exception:
+        # Absolute fallback: extractor must NEVER break the system
         return {
             "intent": None,
             "date_text": None,
             "time_text": None,
             "patient_name": None,
             "patient_phone": None,
+            "confidence": "low",
         }
-
-    extracted = {
-        "intent": data.get("intent"),
-        "date_text": data.get("date_text"),
-        "time_text": data.get("time_text"),
-        "patient_name": data.get("patient_name"),
-        "patient_phone": data.get("patient_phone"),
-    }
-
-    print("✅ [Extractor] Parsed entities:", extracted)
-    return extracted
