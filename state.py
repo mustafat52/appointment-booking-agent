@@ -19,6 +19,8 @@ class BookingState:
 
         self.awaiting_confirmation = False
         self.awaiting_clarification = False
+        
+        self.expecting = None  # date | time | name | phone | confirm
 
         self.confirmed = False
 
