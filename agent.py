@@ -138,8 +138,15 @@ def run_agent(user_message: str, state: BookingState) -> str:
             return "I couldn’t find any appointment to reschedule."
 
         # --- Handle "same day" / "same time"
-        if "same day" in msg:
+        if any(p in msg for p in ["same day", "same date"]):
             state.reschedule_date = state.date
+
+        if "same time" in msg:
+            state.reschedule_time = state.time    
+
+
+
+
         elif not state.reschedule_date:
             parsed = normalize_date(msg)
             if parsed:
