@@ -124,10 +124,12 @@ def run_agent(user_message: str, state: BookingState) -> str:
         }
     )
 
+    confidence = extracted.get("confidence", "low")
+
     # ---------------------------
     # INTENT
     # ---------------------------
-    if extracted["confidence"] != "low" and extracted["intent"]:
+    if confidence != "low" and extracted["intent"]:
         state.intent = extracted["intent"]
 
     if state.intent is None:
@@ -164,7 +166,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
             state.reset()
             return "I couldn’t find any appointment to reschedule."
 
-        # 🔒 PHASE-4 SNAPSHOT FIX
+        # 🔒 SNAPSHOT: same day / same time
         if any(p in msg for p in ["same day", "same date"]):
             state.reschedule_date = state.last_date
 
@@ -199,12 +201,10 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 state.reschedule_date,
                 state.reschedule_time,
                 doctor_id,
-                # 🔒 PHASE-4 SNAPSHOT FIX
                 state.last_patient_name,
                 state.last_patient_phone,
             )
 
-            # 🔒 update snapshot
             state.last_event_id = booking["event_id"]
             state.last_doctor_id = doctor_id
             state.last_date = booking["date"]
@@ -245,16 +245,18 @@ def run_agent(user_message: str, state: BookingState) -> str:
         state.time = None
         return "❌ That slot is not available. Please choose another date and time."
 
+    # 🔒 NAME (never overwrite)
     if not state.patient_name:
-        if extracted["patient_name"]:
+        if confidence == "high" and extracted["patient_name"]:
             state.patient_name = extracted["patient_name"].title()
         elif msg not in CONTROL_WORDS and not re.search(r"\d", msg):
             state.patient_name = user_message.strip().title()
         else:
             return "May I know the patient’s name?"
 
+    # 🔒 PHONE (never overwrite)
     if not state.patient_phone:
-        if extracted["patient_phone"]:
+        if confidence == "high" and extracted["patient_phone"]:
             digits = re.sub(r"\D", "", extracted["patient_phone"])
             if len(digits) == 10:
                 state.patient_phone = digits
@@ -274,7 +276,6 @@ def run_agent(user_message: str, state: BookingState) -> str:
             state.patient_phone,
         )
 
-        # 🔒 PHASE-4 SNAPSHOT FIX
         state.last_event_id = booking["event_id"]
         state.last_doctor_id = doctor_id
         state.last_date = booking["date"]
