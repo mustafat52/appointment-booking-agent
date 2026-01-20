@@ -247,8 +247,11 @@ def run_agent(user_message: str, state: BookingState) -> str:
     if not state.patient_name:
         if extracted["patient_name"]:
             state.patient_name = extracted["patient_name"].title()
+        elif msg not in CONTROL_WORDS and not re.search(r"\d", msg):
+            state.patient_name = user_message.strip().title()
         else:
             return "May I know the patient’s name?"
+
 
     if not state.patient_phone:
         if extracted["patient_phone"]:
