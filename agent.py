@@ -25,22 +25,24 @@ def normalize_time(text: str):
         return None, False
 
     t = text.lower()
-    m = re.search(r"\b(\d{1,2})\b", t)
+    m = re.search(r"\b(\d{1,2})\s*(am|pm)?\b", t)
+
     if not m:
         return None, True
 
     hour = int(m.group(1))
+    meridiem = m.group(2)
 
-    if "morning" in t:
-        return ("00:00" if hour == 12 else f"{hour:02d}:00"), False
 
-    if "afternoon" in t or "evening" in t or "pm" in t:
+    if meridiem == "pm" or "afternoon" in t or "evening" in t:
         if hour < 12:
             hour += 12
         return f"{hour:02d}:00", False
 
-    if "am" in t:
-        return ("00:00" if hour == 12 else f"{hour:02d}:00"), False
+    if meridiem == "am" or "morning" in t:
+        if hour == 12:
+            hour = 0
+        return f"{hour:02d}:00", False
 
     return None, True
 
