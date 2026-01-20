@@ -28,6 +28,7 @@ class BookingState:
 
         # Conversation helpers
         self.expecting = None
+        self.confirmed = False
 
     def reset(self):
         """
