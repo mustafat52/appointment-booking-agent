@@ -259,7 +259,12 @@ def run_agent(user_message: str, state: BookingState) -> str:
             if len(digits) == 10:
                 state.patient_phone = digits
         else:
-            return "Please share a 10-digit contact number."
+            digits = re.sub(r"\D", "", msg)
+            if len(digits) == 10:
+                state.patient_phone = digits
+            else:
+                return "Please share a 10-digit contact number."
+
 
     if msg in CONTROL_WORDS:
         booking = book_appointment(
