@@ -2,31 +2,38 @@
 
 class BookingState:
     def __init__(self):
-        self.intent = None
+        # Intent
+        self.intent = None  # BOOK | CANCEL | RESCHEDULE
 
+        # Current booking (in-progress)
         self.date = None
         self.time = None
         self.patient_name = None
         self.patient_phone = None
 
+        # Doctor context
         self.doctor_id = None
 
+        # Last confirmed appointment (PHASE-4 SNAPSHOT)
         self.last_event_id = None
         self.last_doctor_id = None
+        self.last_date = None
+        self.last_time = None
+        self.last_patient_name = None
+        self.last_patient_phone = None
 
+        # Reschedule flow
         self.reschedule_date = None
         self.reschedule_time = None
 
-        self.awaiting_confirmation = False
-        self.awaiting_clarification = False
-        
-        self.expecting = None  # date | time | name | phone | confirm
-
-        self.confirmed = False
+        # Conversation helpers
+        self.expecting = None
 
     def reset(self):
-        print("🔄 [State] Resetting state")
-
+        """
+        Reset ONLY the active conversation.
+        DO NOT clear last appointment snapshot.
+        """
         self.intent = None
         self.date = None
         self.time = None
@@ -34,6 +41,4 @@ class BookingState:
         self.patient_phone = None
         self.reschedule_date = None
         self.reschedule_time = None
-        self.awaiting_confirmation = False
-        self.awaiting_clarification = False
-        self.confirmed = False
+        self.expecting = None

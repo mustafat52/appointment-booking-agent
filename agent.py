@@ -33,7 +33,6 @@ def normalize_time(text: str):
     hour = int(m.group(1))
     meridiem = m.group(2)
 
-
     if meridiem == "pm" or "afternoon" in t or "evening" in t:
         if hour < 12:
             hour += 12
@@ -48,17 +47,13 @@ def normalize_time(text: str):
 
 
 def normalize_date(text: str):
-
     if not text:
         return None
 
     t = text.lower()
     today = datetime.today()
 
-
-
     weekdays = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"]
-
     for i, day in enumerate(weekdays):
         if day in t:
             days_ahead = (i - today.weekday() + 7) % 7
@@ -66,7 +61,6 @@ def normalize_date(text: str):
                 days_ahead = 7
             target = today + timedelta(days=days_ahead)
             return target.strftime("%Y-%m-%d")
-
 
     if "today" in t:
         return today.strftime("%Y-%m-%d")
@@ -111,7 +105,10 @@ def run_agent(user_message: str, state: BookingState) -> str:
     # ---------------------------
     use_llm = (
         state.intent is None
-        or any(p in msg for p in ["after", "around", "same", "earlier", "later", "next", "following","this","coming"] )
+        or any(p in msg for p in [
+            "after","around","same","earlier","later",
+            "next","following","this","coming"
+        ])
     )
 
     extracted = (
@@ -128,7 +125,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
     )
 
     # ---------------------------
-    # INTENT (LLM + FALLBACK)
+    # INTENT
     # ---------------------------
     if extracted["confidence"] != "low" and extracted["intent"]:
         state.intent = extracted["intent"]
@@ -167,11 +164,12 @@ def run_agent(user_message: str, state: BookingState) -> str:
             state.reset()
             return "I couldn’t find any appointment to reschedule."
 
+        # 🔒 PHASE-4 SNAPSHOT FIX
         if any(p in msg for p in ["same day", "same date"]):
-            state.reschedule_date = state.date
+            state.reschedule_date = state.last_date
 
         if "same time" in msg:
-            state.reschedule_time = state.time
+            state.reschedule_time = state.last_time
 
         if not state.reschedule_date:
             parsed = normalize_date(extracted["date_text"] or msg)
@@ -201,14 +199,17 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 state.reschedule_date,
                 state.reschedule_time,
                 doctor_id,
-                state.patient_name,
-                state.patient_phone,
+                # 🔒 PHASE-4 SNAPSHOT FIX
+                state.last_patient_name,
+                state.last_patient_phone,
             )
 
+            # 🔒 update snapshot
             state.last_event_id = booking["event_id"]
             state.last_doctor_id = doctor_id
-            state.date = booking["date"]
-            state.time = booking["time"]
+            state.last_date = booking["date"]
+            state.last_time = booking["time"]
+
             state.reschedule_date = None
             state.reschedule_time = None
             state.intent = None
@@ -223,7 +224,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
         )
 
     # ---------------------------
-    # BOOK (UNCHANGED FLOW)
+    # BOOK
     # ---------------------------
     if not state.date:
         parsed = normalize_date(extracted["date_text"] or msg)
@@ -252,7 +253,6 @@ def run_agent(user_message: str, state: BookingState) -> str:
         else:
             return "May I know the patient’s name?"
 
-
     if not state.patient_phone:
         if extracted["patient_phone"]:
             digits = re.sub(r"\D", "", extracted["patient_phone"])
@@ -265,7 +265,6 @@ def run_agent(user_message: str, state: BookingState) -> str:
             else:
                 return "Please share a 10-digit contact number."
 
-
     if msg in CONTROL_WORDS:
         booking = book_appointment(
             state.date,
@@ -274,8 +273,15 @@ def run_agent(user_message: str, state: BookingState) -> str:
             state.patient_name,
             state.patient_phone,
         )
+
+        # 🔒 PHASE-4 SNAPSHOT FIX
         state.last_event_id = booking["event_id"]
         state.last_doctor_id = doctor_id
+        state.last_date = booking["date"]
+        state.last_time = booking["time"]
+        state.last_patient_name = state.patient_name
+        state.last_patient_phone = state.patient_phone
+
         state.reset()
         return f"✅ Appointment booked for {booking['date']} at {booking['time']}"
 
