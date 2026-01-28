@@ -36,7 +36,7 @@ document.getElementById("onboard-form").addEventListener("submit", async (e) => 
    messageDiv.innerHTML = `
   <div class="success">
     ✅ Doctor onboarded successfully.<br/>
-    Booking URL: <b>/book/${data.slug}</b><br/><br/>
+    Booking URL: <b>https://appointment-booking-agent-b06e.onrender.com//book/${data.slug}</b><br/><br/>
     <button id="connect-calendar-btn">
       🔗 Connect Google Calendar
     </button>
