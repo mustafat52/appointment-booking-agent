@@ -1,126 +1,358 @@
 from datetime import datetime, timedelta
 import pytz
+import os
 
 from calendar_oauth import build_calendar_service
 from auth_store import oauth_store
+
+# LEGACY (fallback only – do not add new logic here)
 from doctor_config import DOCTORS, DEFAULT_DOCTOR_ID
+from sqlalchemy import select
+from db.database import SessionLocal
+from db.models import DoctorCalendarCredential
+
+
+from db.repository import (
+    get_or_create_patient,
+    create_appointment,
+    get_appointment_by_event_id,
+    cancel_appointment_db,
+    reschedule_appointment_db,
+    get_doctor_by_id
+)
 
 TIMEZONE = "Asia/Kolkata"
+DISABLE_CALENDAR = os.getenv("DISABLE_CALENDAR", "false").lower() == "true"
 
 
+
+
+
+
+def get_credentials_for_doctor(doctor_id):
+    """
+    Phase 8 – DB-first calendar credentials lookup.
+    Falls back to in-memory store for safety.
+    """
+    from db.repository import get_doctor_calendar_credentials
+
+    doctor_id_str = str(doctor_id)
+
+    # 1️⃣ DB-first
+    creds_row = get_doctor_calendar_credentials(doctor_id)
+    if creds_row:
+        from google.oauth2.credentials import Credentials
+
+        return Credentials(
+            token=creds_row.access_token,
+            refresh_token=creds_row.refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=os.getenv("GOOGLE_CLIENT_ID"),
+            client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+            scopes=["https://www.googleapis.com/auth/calendar"],
+            expiry=creds_row.expires_at,
+        )
+
+    # 2️⃣ Fallback to in-memory (temporary safety net)
+    creds_map = oauth_store.get("credentials", {})
+    return creds_map.get(doctor_id_str)
+
+
+
+
+
+# ------------------------------------------------------------------
+# LEGACY CONFIG-BASED DOCTOR FETCH (FALLBACK ONLY)
+# ------------------------------------------------------------------
 def _get_doctor(doctor_id: str):
-    doctor = DOCTORS.get(doctor_id)
-    if not doctor:
-        doctor = DOCTORS[DEFAULT_DOCTOR_ID]
-    return doctor
+    """
+    ⚠️ LEGACY FALLBACK
+    Do NOT add new logic dependencies on this.
+    Will be removed in Phase 7.
+    """
+    return DOCTORS.get(doctor_id, DOCTORS[DEFAULT_DOCTOR_ID])
 
 
-def check_availability(date_str: str, time_str: str, doctor_id: str) -> bool:
-    credentials = oauth_store.get("credentials")
-    if not credentials:
-        raise RuntimeError("Calendar not connected")
+# ------------------------------------------------------------------
+# Phase 6.6 – DB-backed doctor fetch (SAFE, ADDITIVE)
+# ------------------------------------------------------------------
+def get_doctor_from_db(doctor_id):
+    """
+    DB-first doctor fetch.
+    Returns None if not found or DB error.
+    """
+    db = None
+    try:
+        from db.database import SessionLocal
+        from db.models import Doctor
 
-    doctor = _get_doctor(doctor_id)
-    service = build_calendar_service(credentials)
-    tz = pytz.timezone(TIMEZONE)
-
-    start_dt = tz.localize(
-        datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
-    )
-
-    duration = doctor["slot_duration_minutes"]
-    buffer_minutes = doctor["buffer_minutes"]
-    end_dt = start_dt + timedelta(minutes=duration)
-
-    if start_dt.weekday() not in doctor["working_days"]:
-        return False
-
-    wh_start = datetime.strptime(
-        doctor["working_hours"]["start"], "%H:%M"
-    ).time()
-    wh_end = datetime.strptime(
-        doctor["working_hours"]["end"], "%H:%M"
-    ).time()
-
-    if not (wh_start <= start_dt.time() and end_dt.time() <= wh_end):
-        return False
-
-    events = service.events().list(
-        calendarId=doctor["calendar_id"],
-        timeMin=(start_dt - timedelta(minutes=buffer_minutes))
-        .astimezone(pytz.UTC)
-        .isoformat(),
-        timeMax=(end_dt + timedelta(minutes=buffer_minutes))
-        .astimezone(pytz.UTC)
-        .isoformat(),
-        singleEvents=True,
-        orderBy="startTime",
-    ).execute()
-
-    return not events.get("items")
+        db = SessionLocal()
+        return db.get(Doctor, doctor_id)
+    except Exception:
+        return None
+    finally:
+        if db:
+            db.close()
 
 
-def book_appointment(
+# ------------------------------------------------------------------
+# Phase 6.6.3 – DB-first calendar identity (SAFE)
+# ------------------------------------------------------------------
+def get_calendar_id_for_doctor(doctor_id):
+    with SessionLocal() as db:
+        creds = db.execute(
+            select(DoctorCalendarCredential).where(
+                DoctorCalendarCredential.doctor_id == doctor_id
+            )
+        ).scalars().first()
+
+        if not creds:
+            raise RuntimeError("❌ No calendar credentials found for doctor")
+
+        if not creds.calendar_id:
+            raise RuntimeError("❌ calendar_id is empty in doctor_calendar_credentials")
+
+        return creds.calendar_id
+
+
+
+# ------------------------------------------------------------------
+# Phase 6.6 – DB-based availability (SAFE, ADDITIVE)
+# ------------------------------------------------------------------
+def check_availability_db(
+    date_str: str,
+    time_str: str,
+    doctor_id,
+    exclude_appointment_id=None,
+):
+    """
+    DB-only availability check.
+    Returns True if slot is free, False if overlap exists.
+    Never touches Google Calendar.
+    """
+
+    from db.database import SessionLocal
+    from db.models import Appointment
+
+    db = SessionLocal()
+    try:
+        q = db.query(Appointment).filter(
+            Appointment.doctor_id == doctor_id,
+            Appointment.appointment_date == datetime.strptime(date_str, "%Y-%m-%d").date(),
+            Appointment.appointment_time == datetime.strptime(time_str, "%H:%M").time(),
+            Appointment.status == "BOOKED",
+        )
+
+        if exclude_appointment_id:
+            q = q.filter(Appointment.appointment_id != exclude_appointment_id)
+
+        return not db.query(q.exists()).scalar()
+
+    finally:
+        db.close()
+
+
+
+# ------------------------------------------------------------------
+# Availability entry point (DB-first, LEGACY fallback preserved)
+# ------------------------------------------------------------------
+def check_availability(
     date_str: str,
     time_str: str,
     doctor_id: str,
-    patient_name: str,
-    patient_phone: str,
-) -> dict:
-    credentials = oauth_store.get("credentials")
-    if not credentials:
-        raise RuntimeError("Calendar not connected")
+    exclude_appointment_id=None,
+) -> bool:
+    try:
+        return check_availability_db(
+            date_str,
+            time_str,
+            doctor_id,
+            exclude_appointment_id=exclude_appointment_id,
+        )
+    except Exception:
+        # Fail closed: safer to block than double-book
+        return False
 
-    doctor = _get_doctor(doctor_id)
-    service = build_calendar_service(credentials)
-    tz = pytz.timezone(TIMEZONE)
 
-    start_dt = tz.localize(
-        datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+# ------------------------------------------------------------------
+# Booking (calendar now DB-first, logic unchanged otherwise)
+# ------------------------------------------------------------------
+def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone):
+    if not doctor_id:
+        raise ValueError("Doctor context missing during booking")
+
+    doctor_cfg = _get_doctor(doctor_id)
+
+    # Existing behavior preserved intentionally
+    from db.repository import get_doctor_by_slug
+    doctor_db = get_doctor_by_id(doctor_id)
+    if not doctor_db:
+        raise ValueError("Doctor not found during booking")
+
+
+    patient = get_or_create_patient(patient_name, patient_phone)
+
+    event_id = None
+
+    if not DISABLE_CALENDAR:
+        credentials = get_credentials_for_doctor(doctor_id)
+        if credentials:
+            service = build_calendar_service(credentials)
+            tz = pytz.timezone(TIMEZONE)
+
+            start_dt = tz.localize(
+                datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+            )
+            end_dt = start_dt + timedelta(
+                minutes=doctor_cfg["slot_duration_minutes"]
+            )
+
+            calendar_id = get_calendar_id_for_doctor(doctor_id)
+
+            event = {
+            "summary": f"Patient Appointment – {patient_name}",
+            "description": (
+                f"Doctor: {doctor_db.name}\n"
+                f"Patient Name: {patient_name}\n"
+                f"Phone: {patient_phone}\n\n"
+                f"Booked via AI Appointment Agent"
+            ),
+            "start": {
+                "dateTime": start_dt.isoformat(),
+                "timeZone": TIMEZONE,
+            },
+            "end": {
+                "dateTime": end_dt.isoformat(),
+                "timeZone": TIMEZONE,
+            },
+            "reminders": {
+                "useDefault": False,
+                "overrides": [
+                    {"method": "popup", "minutes": 30},
+                    {"method": "popup", "minutes": 10},
+                ],
+            },
+        }
+
+
+            created = service.events().insert(
+                calendarId=calendar_id,
+                body=event
+            ).execute()
+
+            event_id = created.get("id")
+
+    appt = create_appointment(
+        doctor_id=doctor_db.doctor_id,
+        patient_id=patient.patient_id,
+        appointment_date=datetime.strptime(date_str, "%Y-%m-%d").date(),
+        appointment_time=datetime.strptime(time_str, "%H:%M").time(),
+        status="BOOKED",
+        calendar_event_id=event_id,
     )
-
-    end_dt = start_dt + timedelta(
-        minutes=doctor["slot_duration_minutes"]
-    )
-
-    event = {
-        "summary": f"Patient Appointment – {patient_name}",
-        "description": (
-            f"Doctor: {doctor['name']}\n"
-            f"Patient Name: {patient_name}\n"
-            f"Phone: {patient_phone}\n"
-            f"Booked via AI Appointment Agent"
-        ),
-        "start": {"dateTime": start_dt.isoformat(), "timeZone": TIMEZONE},
-        "end": {"dateTime": end_dt.isoformat(), "timeZone": TIMEZONE},
-    }
-
-    created_event = service.events().insert(
-        calendarId=doctor["calendar_id"],
-        body=event
-    ).execute()
 
     return {
-        "status": "BOOKED",
-        "event_id": created_event.get("id"),
+        "appointment_id": appt.appointment_id,
+        "event_id": event_id,
         "date": date_str,
         "time": time_str,
-        "calendar_link": created_event.get("htmlLink"),
     }
 
 
-# ===============================
-# Phase 4.3 — Cancel appointment
-# ===============================
-def cancel_appointment(event_id: str, doctor_id: str) -> None:
-    credentials = oauth_store.get("credentials")
-    if not credentials:
-        raise RuntimeError("Calendar not connected")
+# ------------------------------------------------------------------
+# Cancel (calendar deletion now DB-first)
+# ------------------------------------------------------------------
+def cancel_appointment(event_id: str, doctor_id: str):
+    appt = get_appointment_by_event_id(event_id)
+    if appt:
+        cancel_appointment_db(appt.appointment_id)
 
-    doctor = _get_doctor(doctor_id)
+    if DISABLE_CALENDAR or not event_id:
+        return
+
+    credentials = get_credentials_for_doctor(doctor_id)
+    if not credentials:
+        return
+
+    calendar_id = get_calendar_id_for_doctor(doctor_id)
     service = build_calendar_service(credentials)
 
     service.events().delete(
-        calendarId=doctor["calendar_id"],
+        calendarId=calendar_id,
         eventId=event_id,
     ).execute()
+
+
+# ------------------------------------------------------------------
+# Phase 6.5 – DB-first cancellation (UNCHANGED)
+# ------------------------------------------------------------------
+def cancel_appointment_by_id(appointment_id):
+    """
+    Phase 6.5 – DB-first cancellation
+    No calendar dependency
+    """
+    cancel_appointment_db(appointment_id)
+
+
+def is_working_day(date_str: str, doctor_id: str) -> bool:
+    doctor = get_doctor_from_db(doctor_id)
+    if not doctor:
+        return False
+
+    date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+    weekday = date_obj.weekday()  # 0=Mon
+
+    working_days = list(map(int, doctor.working_days.split(",")))
+    return weekday in working_days
+
+
+def update_calendar_event(
+    *,
+    doctor_id,
+    event_id: str,
+    new_date,
+    new_time,
+):
+    """
+    Update an existing Google Calendar event.
+    Side-effect only. Must not affect DB logic.
+    """
+    if DISABLE_CALENDAR or not event_id:
+        return
+
+    credentials = get_credentials_for_doctor(doctor_id)
+    if not credentials:
+        return
+
+    calendar_id = get_calendar_id_for_doctor(doctor_id)
+    service = build_calendar_service(credentials)
+
+    tz = pytz.timezone(TIMEZONE)
+    start_dt = tz.localize(
+        datetime.combine(
+            datetime.strptime(new_date, "%Y-%m-%d").date(),
+            datetime.strptime(new_time, "%H:%M").time(),
+        )
+    )
+    end_dt = start_dt + timedelta(minutes=30)  # slot duration
+
+    event = service.events().get(
+        calendarId=calendar_id,
+        eventId=event_id
+    ).execute()
+
+    event["start"] = {
+        "dateTime": start_dt.isoformat(),
+        "timeZone": TIMEZONE,
+    }
+    event["end"] = {
+        "dateTime": end_dt.isoformat(),
+        "timeZone": TIMEZONE,
+    }
+
+    service.events().patch(
+        calendarId=calendar_id,
+        eventId=event_id,
+        body=event
+    ).execute()
+

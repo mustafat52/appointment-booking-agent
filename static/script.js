@@ -1,3 +1,6 @@
+
+
+
 async function sendMessage() {
     const input = document.getElementById("message");
     const chatBox = document.getElementById("chat-box");
@@ -16,10 +19,12 @@ async function sendMessage() {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
+
             },
+            credentials:"include",
             body: JSON.stringify({
-                session_id: "web_user",
-                message: text,
+                
+                message: text                
             }),
         });
 

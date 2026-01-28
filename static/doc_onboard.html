@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Doctor Onboarding</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 40px auto;
+    }
+    label {
+      display: block;
+      margin-top: 15px;
+      font-weight: bold;
+    }
+    input, button {
+      width: 100%;
+      padding: 8px;
+      margin-top: 5px;
+    }
+    .days label {
+      display: inline-block;
+      margin-right: 10px;
+      font-weight: normal;
+    }
+    .error {
+      color: red;
+      margin-top: 15px;
+    }
+    .success {
+      color: green;
+      margin-top: 15px;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Doctor Onboarding</h2>
+
+  <form id="onboard-form">
+    <label>Name</label>
+    <input type="text" id="name" required />
+
+    <label>Email</label>
+    <input type="email" id="email" required />
+
+    <label>Working Days</label>
+    <div class="days">
+      <label><input type="checkbox" value="0"> Mon</label>
+      <label><input type="checkbox" value="1"> Tue</label>
+      <label><input type="checkbox" value="2"> Wed</label>
+      <label><input type="checkbox" value="3"> Thu</label>
+      <label><input type="checkbox" value="4"> Fri</label>
+      <label><input type="checkbox" value="5"> Sat</label>
+      <label><input type="checkbox" value="6"> Sun</label>
+    </div>
+
+    <label>Work Start Time</label>
+    <input type="time" id="start_time" required />
+
+    <label>Work End Time</label>
+    <input type="time" id="end_time" required />
+
+    <label>Avg Consultation Minutes</label>
+    <input type="number" id="avg_minutes" required />
+
+    <label>Buffer Minutes</label>
+    <input type="number" id="buffer_minutes" required />
+
+    <button type="submit">Onboard Doctor</button>
+  </form>
+
+  <div id="message"></div>
+
+  <script src="/static/doc_onboard.js"></script>
+</body>
+</html>

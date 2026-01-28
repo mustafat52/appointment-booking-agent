@@ -35,3 +35,46 @@ DEFAULT_DOCTOR_ID = "dr-mukesh"
 
 # For Phase 2 compatibility (temporary)
 DOCTOR_CONFIG = DOCTORS[DEFAULT_DOCTOR_ID]
+
+from db.repository import get_doctor_by_slug
+
+
+def get_doctor(slug: str):
+    """
+    DB-first doctor fetch with config fallback.
+    Always returns a normalized doctor dict.
+    """
+
+    # -----------------------
+    # 1. Try DB first
+    # -----------------------
+    doctor = get_doctor_by_slug(slug)
+
+    if doctor:
+        return {
+            "id": doctor.doctor_id,
+            "slug": doctor.slug,
+            "name": doctor.name,
+            "calendar_id": doctor.calendar_id,
+            "working_days": doctor.working_days,
+            "working_hours": {
+                "start": doctor.work_start_time.strftime("%H:%M"),
+                "end": doctor.work_end_time.strftime("%H:%M"),
+            },
+            "slot_duration_minutes": doctor.avg_consult_minutes,
+            "buffer_minutes": doctor.buffer_minutes,
+        }
+
+    # -----------------------
+    # 2. Fallback to config
+    # -----------------------
+    if slug in DOCTORS:
+        raise RuntimeError(
+        f"Doctor '{slug}' not found in DB. Onboard doctor before use."
+    )
+
+
+    # -----------------------
+    # 3. Final fallback
+    # -----------------------
+    return DOCTOR_CONFIG

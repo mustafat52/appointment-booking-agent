@@ -1,0 +1,111 @@
+# db/models.py
+
+from sqlalchemy import (
+    Column, String, Boolean, Integer, Time, Date, Text,
+    ForeignKey, TIMESTAMP
+)
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+import uuid
+
+from .database import Base
+
+
+class Doctor(Base):
+    __tablename__ = "doctors"
+
+    doctor_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    slug = Column(String, unique=True, nullable=False)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    calendar_id = Column(String, nullable=False)
+
+    working_days = Column(Text, nullable=False)  # store as CSV or JSON later
+    work_start_time = Column(Time, nullable=False)
+    work_end_time = Column(Time, nullable=False)
+
+    avg_consult_minutes = Column(Integer, default=15)
+    buffer_minutes = Column(Integer, default=5)
+
+    is_active = Column(Boolean, default=True)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+
+    appointments = relationship("Appointment", back_populates="doctor")
+
+
+
+
+class Patient(Base):
+    __tablename__ = "patients"
+
+    patient_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=False)
+    phone = Column(String, unique=True, nullable=False)
+
+    first_seen_at = Column(TIMESTAMP, server_default=func.now())
+    last_seen_at = Column(TIMESTAMP, server_default=func.now())
+
+    appointments = relationship("Appointment", back_populates="patient")
+
+
+
+class Appointment(Base):
+    __tablename__ = "appointments"
+
+    appointment_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    doctor_id = Column(UUID(as_uuid=True), ForeignKey("doctors.doctor_id"))
+    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
+
+    appointment_date = Column(Date, nullable=False)
+    appointment_time = Column(Time, nullable=False)
+
+    status = Column(String, default="BOOKED")
+    calendar_event_id = Column(String)
+
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+    doctor = relationship("Doctor", back_populates="appointments")
+    patient = relationship("Patient", back_populates="appointments")
+
+
+
+class DoctorCalendarCredential(Base):
+    __tablename__ = "doctor_calendar_credentials"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+
+    doctor_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("doctors.doctor_id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True
+    )
+
+    provider = Column(String, nullable=False)  # e.g. "google"
+
+    calendar_id = Column(String, nullable=False)
+
+    access_token = Column(Text, nullable=False)
+    refresh_token = Column(Text, nullable=False)
+
+    expires_at = Column(TIMESTAMP, nullable=False)
+
+    created_at = Column(
+        TIMESTAMP,
+        server_default=func.now()
+    )
+
+    updated_at = Column(
+        TIMESTAMP,
+        server_default=func.now(),
+        onupdate=func.now()
+    )
+
+    doctor = relationship("Doctor", backref="calendar_credentials")
