@@ -278,7 +278,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 return "Please confirm cancellation. (yes / no)"
 
             try:
-                cancel_appointment_by_id(state.selected_appointment_id)
+                cancel_appointment_by_id(state.selected_appointment_id,doctor_id)
             except Exception:
                 state.reset_flow()
                 return (
@@ -480,40 +480,44 @@ def run_agent(user_message: str, state: BookingState) -> str:
                     f"(yes / no)"
                 )
             
-            try:
-                reschedule_appointment_db(
-                appointment_id=state.selected_appointment_id,
-                new_date=state.reschedule_date,
-                new_time=state.reschedule_time,
-                new_calendar_event_id=None,
+
+            selected_appt = next(
+                a for a in state.candidate_appointments
+                if a.appointment_id == state.selected_appointment_id
             )
-            except Exception:
+
+            existing_event_id = selected_appt.calendar_event_id
+
+
+            if not selected_appt.calendar_event_id:
                 state.reset_flow()
                 return (
-                    "⚠️ I couldn’t reschedule the appointment right now.\n"
-                    "Please try again in a moment."
+                    "⚠️ This appointment cannot be rescheduled because "
+                    "it is not linked to a calendar event."
                 )
-
 
 
             try:
                 update_calendar_event(
             doctor_id=doctor_id,
-            event_id=next(
-                a.calendar_event_id
-                for a in state.candidate_appointments
-                if a.appointment_id == state.selected_appointment_id
-            ),
+            event_id=existing_event_id,
             new_date=state.reschedule_date,
             new_time=state.reschedule_time,
         )
             except Exception:
                 state.reset_flow()
                 return (
-                    "✅ Your appointment has been rescheduled.\n"
-                    "We’re updating the clinic’s calendar and it may take a moment.\n"
-                    "You’re all set!"
+                    "⚠️ The appointment was updated, but we couldn’t update the calendar right now.\n"
+                    "The clinic has been notified."
                 )
+            
+            reschedule_appointment_db(
+                appointment_id=state.selected_appointment_id,
+                new_date=state.reschedule_date,
+                new_time=state.reschedule_time,
+                new_calendar_event_id=existing_event_id,
+                )
+
             
 
             state.reset_flow()

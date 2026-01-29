@@ -18,7 +18,8 @@ from db.repository import (
     get_appointment_by_event_id,
     cancel_appointment_db,
     reschedule_appointment_db,
-    get_doctor_by_id
+    get_doctor_by_id,
+    get_appointment_by_id,
 )
 
 TIMEZONE = "Asia/Kolkata"
@@ -286,12 +287,29 @@ def cancel_appointment(event_id: str, doctor_id: str):
 # ------------------------------------------------------------------
 # Phase 6.5 – DB-first cancellation (UNCHANGED)
 # ------------------------------------------------------------------
-def cancel_appointment_by_id(appointment_id):
-    """
-    Phase 6.5 – DB-first cancellation
-    No calendar dependency
-    """
+def cancel_appointment_by_id(appointment_id, doctor_id):
+    appt = get_appointment_by_id(appointment_id)
+    if not appt:
+        return
+
+    # 1️⃣ Delete from Google Calendar FIRST
+    if not DISABLE_CALENDAR and appt.calendar_event_id:
+        credentials = get_credentials_for_doctor(doctor_id)
+        if credentials:
+            calendar_id = get_calendar_id_for_doctor(doctor_id) or "primary"
+            service = build_calendar_service(credentials)
+
+            try:
+                service.events().delete(
+                    calendarId=calendar_id,
+                    eventId=appt.calendar_event_id,
+                ).execute()
+            except Exception as e:
+                print("Calendar delete failed:", e)
+
+    # 2️⃣ Then cancel in DB
     cancel_appointment_db(appointment_id)
+
 
 
 def is_working_day(date_str: str, doctor_id: str) -> bool:
@@ -334,7 +352,10 @@ def update_calendar_event(
             datetime.strptime(new_time, "%H:%M").time(),
         )
     )
-    end_dt = start_dt + timedelta(minutes=30)  # slot duration
+    
+    doctor = get_doctor_from_db(doctor_id)
+    end_dt = start_dt + timedelta(minutes=doctor.slot_duration_minutes)
+ 
 
     event = service.events().get(
         calendarId=calendar_id,
