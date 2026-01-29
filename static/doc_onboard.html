@@ -2,76 +2,176 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Doctor Onboarding</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 600px;
-      margin: 40px auto;
+    :root {
+        --primary: #059669; /* Emerald for medical success vibe */
+        --accent: #10b981;
+        --text: #334155;
     }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #f0fdf4 0%, #e1f5fe 100%);
+      color: var(--text);
+      margin: 0;
+      padding: 40px 20px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .form-card {
+      background: white;
+      padding: 40px;
+      border-radius: 16px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+      width: 100%;
+      max-width: 550px;
+    }
+
+    h2 {
+      margin-top: 0;
+      color: #064e3b;
+      font-size: 1.8rem;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
     label {
       display: block;
-      margin-top: 15px;
-      font-weight: bold;
+      margin-top: 20px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: #475569;
+      margin-bottom: 5px;
     }
-    input, button {
+
+    input[type="text"], 
+    input[type="email"], 
+    input[type="time"], 
+    input[type="number"] {
       width: 100%;
-      padding: 8px;
-      margin-top: 5px;
+      padding: 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      box-sizing: border-box;
+      font-size: 1rem;
     }
+
+    input:focus {
+      outline: none;
+      border-color: var(--primary);
+      ring: 2px solid var(--primary);
+    }
+
+    .grid-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+    }
+
+    .days {
+      background: #f8fafc;
+      padding: 15px;
+      border-radius: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      border: 1px solid #e2e8f0;
+    }
+
     .days label {
-      display: inline-block;
-      margin-right: 10px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin: 0;
       font-weight: normal;
+      background: white;
+      padding: 5px 10px;
+      border-radius: 5px;
+      border: 1px solid #e2e8f0;
+      cursor: pointer;
     }
-    .error {
-      color: red;
-      margin-top: 15px;
+
+    button {
+      width: 100%;
+      padding: 14px;
+      margin-top: 30px;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
     }
-    .success {
-      color: green;
-      margin-top: 15px;
+
+    button:hover {
+      background: #047857;
     }
+
+    #message {
+      text-align: center;
+      font-weight: 500;
+      padding: 15px;
+    }
+
+    .error { color: #dc2626; }
+    .success { color: #059669; }
   </style>
 </head>
 <body>
 
-  <h2>Doctor Onboarding</h2>
+  <div class="form-card">
+    <h2>Doctor Onboarding</h2>
 
-  <form id="onboard-form">
-    <label>Name</label>
-    <input type="text" id="name" required />
+    <form id="onboard-form">
+      <label>Full Name</label>
+      <input type="text" id="name" placeholder="Dr. Jane Doe" required />
 
-    <label>Email</label>
-    <input type="email" id="email" required />
+      <label>Email Address</label>
+      <input type="email" id="email" placeholder="jane@clinic.com" required />
 
-    <label>Working Days</label>
-    <div class="days">
-      <label><input type="checkbox" value="0"> Mon</label>
-      <label><input type="checkbox" value="1"> Tue</label>
-      <label><input type="checkbox" value="2"> Wed</label>
-      <label><input type="checkbox" value="3"> Thu</label>
-      <label><input type="checkbox" value="4"> Fri</label>
-      <label><input type="checkbox" value="5"> Sat</label>
-      <label><input type="checkbox" value="6"> Sun</label>
-    </div>
+      <label>Working Days</label>
+      <div class="days">
+        <label><input type="checkbox" value="0"> Mon</label>
+        <label><input type="checkbox" value="1"> Tue</label>
+        <label><input type="checkbox" value="2"> Wed</label>
+        <label><input type="checkbox" value="3"> Thu</label>
+        <label><input type="checkbox" value="4"> Fri</label>
+        <label><input type="checkbox" value="5"> Sat</label>
+        <label><input type="checkbox" value="6"> Sun</label>
+      </div>
 
-    <label>Work Start Time</label>
-    <input type="time" id="start_time" required />
+      <div class="grid-row">
+          <div>
+            <label>Work Start Time</label>
+            <input type="time" id="start_time" required />
+          </div>
+          <div>
+            <label>Work End Time</label>
+            <input type="time" id="end_time" required />
+          </div>
+      </div>
 
-    <label>Work End Time</label>
-    <input type="time" id="end_time" required />
+      <div class="grid-row">
+          <div>
+            <label>Consultation (Min)</label>
+            <input type="number" id="avg_minutes" value="15" required />
+          </div>
+          <div>
+            <label>Buffer (Min)</label>
+            <input type="number" id="buffer_minutes" value="5" required />
+          </div>
+      </div>
 
-    <label>Avg Consultation Minutes</label>
-    <input type="number" id="avg_minutes" required />
+      <button type="submit">Complete Registration</button>
+    </form>
 
-    <label>Buffer Minutes</label>
-    <input type="number" id="buffer_minutes" required />
-
-    <button type="submit">Onboard Doctor</button>
-  </form>
-
-  <div id="message"></div>
+    <div id="message"></div>
+  </div>
 
   <script src="/static/doc_onboard.js"></script>
 </body>
