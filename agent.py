@@ -196,7 +196,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
         
     
     
-    if msg in CONTROL_WORDS:
+    if msg in CONTROL_WORDS and state.stage == FlowStage.IDLE:
         state.reset_flow()
         return "Alright. What would you like to do now?"
     
