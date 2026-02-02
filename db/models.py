@@ -19,6 +19,9 @@ class Doctor(Base):
     slug = Column(String, unique=True, nullable=False)
     name = Column(String, nullable=False)
     email = Column(String, nullable=False)
+    clinic_email = Column(String, nullable=False)
+    whatsapp_number = Column(String, nullable=True)
+
     calendar_id = Column(String, nullable=False)
 
     working_days = Column(Text, nullable=False)  # store as CSV or JSON later

@@ -7,6 +7,8 @@ document.getElementById("onboard-form").addEventListener("submit", async (e) => 
   const payload = {
     name: document.getElementById("name").value,
     email: document.getElementById("email").value,
+    clinic_email: document.getElementById("clinic_email").value,
+    whatsapp_number: document.getElementById("whatsapp_number").value,
     working_days: days,
     work_start_time: document.getElementById("start_time").value,
     work_end_time: document.getElementById("end_time").value,
