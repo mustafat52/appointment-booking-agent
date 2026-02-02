@@ -42,6 +42,8 @@ def create_doctor(
     *,
     name: str,
     email: str,
+    clinic_email,
+    whatsapp_number,
     slug : str,
     working_days: list[int],
     work_start_time: time,
@@ -54,6 +56,8 @@ def create_doctor(
         doctor = Doctor(
             slug=slug,
             name=name,
+            clinic_email=clinic_email,
+            whatsapp_number=whatsapp_number,
             email=email,
             calendar_id="",
             working_days=",".join(map(str, working_days)),
