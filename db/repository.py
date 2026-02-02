@@ -353,3 +353,23 @@ def get_doctor_by_id(doctor_id):
         return db.get(Doctor, doctor_id)
     finally:
         db.close()
+
+
+from datetime import date
+
+def get_todays_appointments_for_doctor(doctor_id):
+    db = get_db_session()
+    try:
+        stmt = (
+            select(Appointment)
+            .where(
+                Appointment.doctor_id == doctor_id,
+                Appointment.appointment_date == date.today(),
+                Appointment.status == "BOOKED"
+            )
+            .order_by(Appointment.appointment_time)
+        )
+        return db.execute(stmt).scalars().all()
+    finally:
+        db.close()
+
