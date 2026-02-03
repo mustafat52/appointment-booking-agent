@@ -32,7 +32,7 @@ def send_daily_appointments_email(clinic_email, doctor_name, appointments):
     </table>
     """
 
-    resend.emails.send({
+    resend.Emails.send({
         "from": FROM_EMAIL,-+
 
         "to": [clinic_email],
