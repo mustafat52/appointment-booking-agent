@@ -15,7 +15,8 @@ def send_daily_appointments_email(clinic_email, doctor_name, appointments):
     for a in appointments:
         rows += f"""
         <tr>
-            <td>{a.patient_name}</td>
+            <td>{a.patient.name}</td>
+            <td>{a.patient.phone}</td>
             <td>{a.appointment_time}</td>
         </tr>
         """
@@ -32,7 +33,8 @@ def send_daily_appointments_email(clinic_email, doctor_name, appointments):
     """
 
     resend.emails.send({
-        "from": FROM_EMAIL,
+        "from": FROM_EMAIL,-+
+
         "to": [clinic_email],
         "subject": f"Today's Appointments – {doctor_name}",
         "html": html,
