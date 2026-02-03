@@ -26,6 +26,7 @@ def send_daily_appointments_email(clinic_email, doctor_name, appointments):
     <table border="1" cellpadding="8" cellspacing="0">
         <tr>
             <th>Patient</th>
+            <th>Phone</th>
             <th>Time</th>
         </tr>
         {rows}
