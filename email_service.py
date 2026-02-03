@@ -1,7 +1,8 @@
 import os
-from resend import Resend
+import resend 
 
-resend = Resend(api_key=os.getenv("RESEND_API_KEY"))
+resend.api_key = os.environ["RESEND_API_KEY"]
+
 
 FROM_EMAIL = os.getenv("FROM_EMAIL", "MedSchedule AI <onboarding@resend.dev>")
 
