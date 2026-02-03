@@ -366,16 +366,16 @@ from sqlalchemy.orm import joinedload
 def get_todays_appointments_for_doctor(doctor_id):
     db = get_db_session()
     try:
-        stmt = (
-            select(Appointment)
-            .options(joinedload(Appointment.patient))  # ✅ FIX
-            .where(
+        return (
+            db.query(Appointment)
+            .options(joinedload(Appointment.patient))
+            .filter(
                 Appointment.doctor_id == doctor_id,
                 Appointment.appointment_date == date.today(),
                 Appointment.status == "BOOKED"
             )
             .order_by(Appointment.appointment_time)
+            .all()
         )
-        return db.execute(stmt).scalars().all()
     finally:
         db.close()
