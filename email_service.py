@@ -33,7 +33,7 @@ def send_daily_appointments_email(clinic_email, doctor_name, appointments):
     """
 
     resend.Emails.send({
-        "from": FROM_EMAIL,-+
+        "from": FROM_EMAIL,
 
         "to": [clinic_email],
         "subject": f"Today's Appointments – {doctor_name}",
