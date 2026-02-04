@@ -5,7 +5,7 @@ import pytz
 from typing import Dict
 from datetime import time
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException,Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse,HTMLResponse
 from pydantic import BaseModel, EmailStr
@@ -22,16 +22,34 @@ from doctor_config import DOCTORS
 from db.repository import (create_doctor, doctor_exists, get_doctor_by_slug,get_doctor_by_email, 
                            get_upcoming_appointments_for_doctor,
                            get_appointment_by_id, cancel_appointment_db , reschedule_appointment_db,
-                           get_todays_appointments_for_doctor)
+                           get_todays_appointments_for_doctor,get_doctor_auth_by_email,update_doctor_last_login, get_doctor_by_id)
 
 
-from tools import cancel_appointment, check_availability
+from tools import cancel_appointment, check_availability, update_calendar_event
 from email_service import send_daily_appointments_email
+
+from auth_utils import hash_password, verify_password
 
 
 app = FastAPI()
 
+
+doctor_sessions = {}
+
+
 TIMEZONE = "Asia/Kolkata"
+
+
+def require_doctor(request: Request):
+    session_id = request.cookies.get("doctor_session")
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    doctor_id = doctor_sessions.get(session_id)
+    if not doctor_id:
+        raise HTTPException(status_code=401, detail="Invalid session")
+
+    return doctor_id
 
 # Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -370,6 +388,12 @@ def doctor_cancel_appointment(
     doctor_id: str,
     appointment_id: str
 ):
+    
+    raise HTTPException(
+    status_code=410,
+    detail="This endpoint is deprecated. Use doctor dashboard APIs."
+)
+
     appt = get_appointment_by_id(appointment_id)
     if not appt:
         raise HTTPException(status_code=404, detail="Appointment not found")
@@ -398,6 +422,12 @@ def doctor_reschedule_appointment(
     appointment_id: str,
     payload: DoctorRescheduleRequest
 ):
+    
+    raise HTTPException(
+    status_code=410,
+    detail="This endpoint is deprecated. Use doctor dashboard APIs."
+)
+
     appt = get_appointment_by_id(appointment_id)
     if not appt:
         raise HTTPException(status_code=404, detail="Appointment not found")
@@ -477,3 +507,170 @@ def send_daily_emails():
         )
 
     return {"status": "Emails processed"}
+
+
+
+from pydantic import BaseModel
+
+class DoctorLoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+@app.post("/auth/doctor/login")
+def doctor_login(payload: DoctorLoginRequest, response: Response):
+    auth = get_doctor_auth_by_email(payload.email)
+    if not auth:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if not verify_password(payload.password, auth.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    session_id = str(uuid.uuid4())
+    doctor_sessions[session_id] = auth.doctor_id
+
+    update_doctor_last_login(auth.id)
+
+    response.set_cookie(
+        key="doctor_session",
+        value=session_id,
+        httponly=True,
+        samesite="lax"
+    )
+
+    return {"status": "logged_in"}
+
+
+
+@app.post("/auth/doctor/logout")
+def doctor_logout(request: Request, response: Response):
+    session_id = request.cookies.get("doctor_session")
+    if session_id:
+        doctor_sessions.pop(session_id, None)
+
+    response.delete_cookie("doctor_session")
+    return {"status": "logged_out"}
+
+
+
+@app.get("/auth/doctor/me")
+def doctor_me(request: Request):
+    doctor_id = require_doctor(request)
+    doctor = get_doctor_by_id(doctor_id)
+
+    return {
+        "doctor_id": str(doctor.doctor_id),
+        "name": doctor.name,
+        "email": doctor.email,
+    }
+
+
+
+@app.post("/api/doctor/appointments/{appointment_id}/cancel")
+def cancel_appointment_secure(
+    appointment_id: str,
+    request: Request
+):
+    
+    
+    # 1️⃣ Identify logged-in doctor (SESSION BASED)
+    doctor_id = require_doctor(request)
+
+    # 2️⃣ Fetch appointment
+    appt = get_appointment_by_id(appointment_id)
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    # ✅ ADD THIS BLOCK HERE
+    if appt.status == "CANCELLED":
+        raise HTTPException(
+            status_code=400,
+            detail="Appointment already cancelled"
+        )
+
+
+    # 3️⃣ Authorization check (CRITICAL)
+    if appt.doctor_id != doctor_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # 4️⃣ Cancel in DB
+    cancel_appointment_db(appointment_id)
+
+    # 5️⃣ Cancel calendar event (reuse existing logic)
+    if appt.calendar_event_id:
+        cancel_appointment(
+            event_id=appt.calendar_event_id,
+            doctor_id=str(doctor_id)
+        )
+
+    print(
+    f"[AUDIT] doctor={doctor_id} "
+    f"action=cancel "
+    f"appointment={appointment_id}"
+)
+    
+
+    return {"status": "cancelled"}
+
+
+
+
+@app.post("/api/doctor/appointments/{appointment_id}/reschedule")
+def reschedule_appointment_secure(
+    appointment_id: str,
+    payload: DoctorRescheduleRequest,
+    request: Request
+):
+    # 1️⃣ Identify logged-in doctor (SESSION BASED)
+    doctor_id = require_doctor(request)
+
+    # 2️⃣ Fetch appointment
+    appt = get_appointment_by_id(appointment_id)
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    
+    
+    # ✅ ADD THIS BLOCK HERE
+    if appt.status != "BOOKED":
+        raise HTTPException(
+        status_code=400,
+        detail="Only booked appointments can be rescheduled"
+    )
+
+    
+    # 3️⃣ Authorization check
+    if appt.doctor_id != doctor_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # 4️⃣ Reschedule in DB
+    new_event_id = None
+    if appt.calendar_event_id:
+        try:
+            new_event_id = update_calendar_event(
+                doctor_id=doctor_id,
+                event_id=appt.calendar_event_id,
+                new_date=str(payload.new_date),
+                new_time=payload.new_time.strftime("%H:%M"),
+            )
+        except Exception as e:
+            print(f"⚠️ Failed to update calendar event: {str(e)}")    
+
+    # 5️⃣ Update DB with new date/time + calendar event id
+    reschedule_appointment_db(
+        appointment_id=appointment_id,
+        new_date=payload.new_date,
+        new_time=payload.new_time,
+        new_calendar_event_id=new_event_id,
+    )
+
+
+    print(
+    f"[AUDIT] doctor={doctor_id} "
+    f"action=reschedule "
+    f"appointment={appointment_id} "
+    f"new_date={payload.new_date} "
+    f"new_time={payload.new_time}"
+)
+
+    return {"status": "rescheduled"}
+

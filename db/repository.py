@@ -3,7 +3,7 @@ from sqlalchemy import select, desc, func
 from datetime import date, time, datetime
 
 from db.database import SessionLocal
-from db.models import Doctor, Patient, Appointment , DoctorCalendarCredential
+from db.models import Doctor, Patient, Appointment , DoctorCalendarCredential, DoctorAuth
 
 
 # -------------------------
@@ -377,5 +377,44 @@ def get_todays_appointments_for_doctor(doctor_id):
             .order_by(Appointment.appointment_time)
             .all()
         )
+    finally:
+        db.close()
+
+
+def get_doctor_auth_by_email(email: str):
+    db = SessionLocal()
+    try:
+        return (
+            db.query(DoctorAuth)
+            .filter(DoctorAuth.email == email, DoctorAuth.is_active == True)
+            .first()
+        )
+    finally:
+        db.close()
+
+
+def create_doctor_auth(doctor_id, email: str, password_hash: str):
+    db = SessionLocal()
+    try:
+        auth = DoctorAuth(
+            doctor_id=doctor_id,
+            email=email,
+            password_hash=password_hash
+        )
+        db.add(auth)
+        db.commit()
+        db.refresh(auth)
+        return auth
+    finally:
+        db.close()
+
+
+def update_doctor_last_login(auth_id):
+    db = SessionLocal()
+    try:
+        auth = db.get(DoctorAuth, auth_id)
+        if auth:
+            auth.last_login_at = datetime.utcnow()
+            db.commit()
     finally:
         db.close()

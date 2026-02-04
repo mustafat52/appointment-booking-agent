@@ -1,7 +1,14 @@
 import os
 import resend 
 
-resend.api_key = os.environ["RESEND_API_KEY"]
+
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+
+if not RESEND_API_KEY:
+    print("⚠️ RESEND_API_KEY not set. Email sending disabled.")
+else:
+    resend.api_key = RESEND_API_KEY
+
 
 
 FROM_EMAIL = os.getenv("FROM_EMAIL", "MedSchedule AI <onboarding@resend.dev>")

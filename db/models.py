@@ -2,13 +2,13 @@
 
 from sqlalchemy import (
     Column, String, Boolean, Integer, Time, Date, Text,
-    ForeignKey, TIMESTAMP
+    ForeignKey, TIMESTAMP, DateTime, ForeignKey
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
-
+from datetime import datetime   
 from .database import Base
 
 
@@ -112,3 +112,24 @@ class DoctorCalendarCredential(Base):
     )
 
     doctor = relationship("Doctor", backref="calendar_credentials")
+
+
+class DoctorAuth(Base):
+    __tablename__ = "doctor_auth"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    doctor_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("doctors.doctor_id"),
+        nullable=False,
+        unique=True
+    )
+
+    email = Column(String, nullable=False, unique=True, index=True)
+    password_hash = Column(String, nullable=False)
+
+    is_active = Column(Boolean, default=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_login_at = Column(DateTime, nullable=True)

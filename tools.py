@@ -354,8 +354,7 @@ def update_calendar_event(
     )
     
     doctor = get_doctor_from_db(doctor_id)
-    end_dt = start_dt + timedelta(minutes=doctor.slot_duration_minutes)
- 
+    end_dt = start_dt + timedelta(minutes=doctor.avg_consult_minutes)
 
     event = service.events().get(
         calendarId=calendar_id,
