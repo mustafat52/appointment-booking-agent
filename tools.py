@@ -253,6 +253,17 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
         calendar_event_id=event_id,
     )
 
+
+
+    
+    if not appt or not appt.calendar_event_id:
+    # rollback calendar event
+        service.events().delete(
+            calendarId=calendar_id,
+            eventId=event_id
+        ).execute()
+        raise RuntimeError("Appointment creation failed after calendar event creation")
+
     return {
         "appointment_id": appt.appointment_id,
         "event_id": event_id,
@@ -268,26 +279,8 @@ def cancel_appointment(event_id: str, doctor_id: str):
     appt = get_appointment_by_event_id(event_id)
     if not appt:
         return
+    cancel_appointment_by_id(appt.appointment_id, doctor_id)
 
-    if not DISABLE_CALENDAR and event_id:
-        credentials = get_credentials_for_doctor(doctor_id)
-        if not credentials:
-            raise RuntimeError("Doctor calendar is not connected")
-
-        calendar_id = get_calendar_id_for_doctor(doctor_id)
-        service = build_calendar_service(credentials)
-
-        try:
-            service.events().delete(
-                calendarId=calendar_id,
-                eventId=event_id,
-            ).execute()
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to delete calendar event: {str(e)}"
-            )
-
-    cancel_appointment_db(appt.appointment_id)
 
 
 
@@ -299,12 +292,14 @@ def cancel_appointment_by_id(appointment_id, doctor_id):
     if not appt:
         return
 
-    # 1️⃣ Delete from Google Calendar FIRST
+    # 1️⃣ Delete from Google Calendar FIRST (if applicable)
     if not DISABLE_CALENDAR and appt.calendar_event_id:
         credentials = get_credentials_for_doctor(doctor_id)
-        if credentials:
-            calendar_id = get_calendar_id_for_doctor(doctor_id) or "primary"
-            service = build_calendar_service(credentials)
+        if not credentials:
+            raise RuntimeError("Doctor calendar is not connected")
+
+        calendar_id = get_calendar_id_for_doctor(doctor_id)
+        service = build_calendar_service(credentials)
 
         try:
             service.events().delete(
@@ -316,8 +311,9 @@ def cancel_appointment_by_id(appointment_id, doctor_id):
                 f"Failed to delete calendar event: {str(e)}"
             )
 
-        # Only cancel in DB if calendar delete succeeds
+    # 2️⃣ ALWAYS cancel in DB (only if calendar delete succeeded or was not needed)
     cancel_appointment_db(appointment_id)
+
 
 
 
