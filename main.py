@@ -714,6 +714,7 @@ def list_doctor_appointments(request: Request):
             "time": a.appointment_time.strftime("%H:%M"),
             "status": a.status,
             "patient_name": a.patient.name if a.patient else None,
+            "patient_phone": a.patient.phone if a.patient else None,
         }
         for a in appointments
     ]

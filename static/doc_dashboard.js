@@ -66,7 +66,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (data.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="5" class="empty-state">
+            <td colspan="6" class="empty-state">
               <div class="empty-state-icon">📅</div>
               <h3>No Appointments</h3>
               <p>You don't have any upcoming appointments.</p>
@@ -86,6 +86,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <td>${a.date}</td>
           <td>${a.time}</td>
           <td>${a.patient_name || "-"}</td>
+          <td>${a.patient_phone || "-"}</td>
           <td><span class="status-badge ${statusClass}">${a.status}</span></td>
           <td>
             <div class="action-buttons">
@@ -95,6 +96,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 data-date="${a.date}"
                 data-time="${a.time}"
                 data-patient="${a.patient_name || 'No patient'}"
+                data-phone="${a.patient_phone || '-'}"
                 ${!isBooked ? "disabled" : ""}>
                 Cancel
               </button>
@@ -104,6 +106,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 data-date="${a.date}"
                 data-time="${a.time}"
                 data-patient="${a.patient_name || 'No patient'}"
+                data-phone="${a.patient_phone || '-'}"
                 ${!isBooked ? "disabled" : ""}>
                 Reschedule
               </button>
@@ -150,9 +153,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const date = e.target.dataset.date;
       const time = e.target.dataset.time;
       const patient = e.target.dataset.patient;
-
+      const phone = e.target.dataset.phone;
       document.getElementById("confirmMessage").innerText =
-        `Are you sure you want to cancel this appointment?\n\nDate: ${date}\nTime: ${time}\nPatient: ${patient}\n\nNote: The patient will need to be notified separately.`;
+        `Are you sure you want to cancel this appointment?\n\nDate: ${date}\nTime: ${time}\nPatient: ${patient}\nPhone: ${phone}\n\nNote: The patient will need to be notified separately.`;
 
       openModal("confirmModal");
     }
@@ -163,9 +166,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const date = e.target.dataset.date;
       const time = e.target.dataset.time;
       const patient = e.target.dataset.patient;
+      const phone = e.target.dataset.phone;
 
       document.getElementById("rescheduleInfo").innerText =
-        `Current appointment:\nDate: ${date}\nTime: ${time}\nPatient: ${patient}`;
+        `Current appointment:\nDate: ${date}\nTime: ${time}\nPatient: ${patient}\nPhone: ${phone}`;
 
       // Set minimum date to today
       const today = new Date().toISOString().split('T')[0];
