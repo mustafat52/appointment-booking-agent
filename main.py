@@ -22,7 +22,8 @@ from doctor_config import DOCTORS
 from db.repository import (create_doctor, doctor_exists, get_doctor_by_slug,get_doctor_by_email, 
                            get_upcoming_appointments_for_doctor,
                            get_appointment_by_id, cancel_appointment_db , reschedule_appointment_db,
-                           get_todays_appointments_for_doctor,get_doctor_auth_by_email,update_doctor_last_login, get_doctor_by_id)
+                           get_todays_appointments_for_doctor,get_doctor_auth_by_email,update_doctor_last_login, get_doctor_by_id,
+                           get_doctor_auth_by_doctor_id,create_doctor_auth)
 
 
 from tools import cancel_appointment, check_availability, update_calendar_event
@@ -286,7 +287,21 @@ def oauth_callback(request: Request):
     oauth_store["pending_doctor"] = None
     oauth_store["flow"] = None
 
-    return {"status": "Calendar connected successfully 🎉"}
+    # 🔐 Decide next step based on DoctorAuth existence
+    auth = get_doctor_auth_by_doctor_id(doctor_id)
+
+    if auth:
+        # Doctor already has login credentials
+        return RedirectResponse(
+            url="/static/doc_login.html",
+            status_code=302
+        )
+
+    # First-time doctor → force password setup
+    return RedirectResponse(
+        url=f"/static/doc_signup.html?doctor_id={doctor_id}",
+        status_code=302
+    )
 
 
 
@@ -304,6 +319,16 @@ class DoctorOnboardRequest(BaseModel):
     work_end_time: time
     avg_consult_minutes: int
     buffer_minutes: int
+
+
+
+
+class DoctorSignupRequest(BaseModel):
+    doctor_id: str
+    password: str
+
+
+
 
 
 @app.get("/doctors/onboard")
@@ -674,3 +699,52 @@ def reschedule_appointment_secure(
 
     return {"status": "rescheduled"}
 
+
+
+@app.get("/api/doctor/appointments")
+def list_doctor_appointments(request: Request):
+    doctor_id = require_doctor(request)
+
+    appointments = get_upcoming_appointments_for_doctor(doctor_id)
+
+    return [
+        {
+            "appointment_id": str(a.appointment_id),
+            "date": a.appointment_date.isoformat(),
+            "time": a.appointment_time.strftime("%H:%M"),
+            "status": a.status,
+            "patient_name": a.patient.name if a.patient else None,
+        }
+        for a in appointments
+    ]
+
+
+@app.post("/auth/doctor/signup")
+def doctor_signup(payload: DoctorSignupRequest):
+    # 1️⃣ Validate doctor exists
+    doctor = get_doctor_by_id(payload.doctor_id)
+    if not doctor:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid signup request"
+        )
+
+    # 2️⃣ Prevent duplicate signup
+    existing = get_doctor_auth_by_doctor_id(payload.doctor_id)
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="Account already created. Please log in."
+        )
+
+    # 3️⃣ Hash password
+    password_hash = hash_password(payload.password)
+
+    # 4️⃣ Create DoctorAuth
+    create_doctor_auth(
+        doctor_id=doctor.doctor_id,
+        email=doctor.email,
+        password_hash=password_hash
+    )
+
+    return {"status": "account_created"}

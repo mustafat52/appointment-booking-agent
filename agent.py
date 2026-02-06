@@ -18,6 +18,7 @@ from db.repository import reschedule_appointment_db
 from db.repository import (
     get_patient_by_phone,
     get_active_appointments,
+    get_doctor_by_id
 )
 # =============================
 
@@ -36,6 +37,19 @@ RESET_KEYWORDS = {
 # ---------------------------
 # Normalization helpers
 # ---------------------------
+
+
+def is_within_clinic_hours(time_str: str, doctor_id) -> bool:
+    """
+    Checks whether the given HH:MM time is within doctor's clinic hours.
+    """
+    doctor = get_doctor_by_id(doctor_id)
+    if not doctor:
+        return False
+
+    requested_time = datetime.strptime(time_str, "%H:%M").time()
+
+    return doctor.work_start_time <= requested_time <= doctor.work_end_time
 
 def normalize_time(text: str):
     if not text:
@@ -444,6 +458,16 @@ def run_agent(user_message: str, state: BookingState) -> str:
 
             if not t:
                 return "Please specify the new time."
+            
+            if not is_within_clinic_hours(t, doctor_id):
+                doctor = get_doctor_by_id(doctor_id)
+                return (
+                    "❌ The doctor is not available at that time.\n\n"
+                    f"🕒 Clinic hours are "
+                    f"{doctor.work_start_time.strftime('%H:%M')} to "
+                    f"{doctor.work_end_time.strftime('%H:%M')}."
+                )
+
 
             if not check_availability(
                 state.reschedule_date,
@@ -558,6 +582,17 @@ def run_agent(user_message: str, state: BookingState) -> str:
 
             if not t:
                 return "Could you please specify the exact time?"
+            
+
+            if not is_within_clinic_hours(t, doctor_id):
+                doctor = get_doctor_by_id(doctor_id)
+                return (
+                    "❌ The doctor is not available at that time.\n\n"
+                    f"🕒 Clinic hours are "
+                    f"{doctor.work_start_time.strftime('%H:%M')} to "
+                    f"{doctor.work_end_time.strftime('%H:%M')}."
+                )
+
 
             if not check_availability(state.date, t, doctor_id):
                 return "❌ That time is not available. Please choose another time."

@@ -259,6 +259,7 @@ def get_upcoming_appointments_for_doctor(
     try:
         stmt = (
             select(Appointment)
+            .options(joinedload(Appointment.patient))  
             .where(
                 Appointment.doctor_id == doctor_id,
                 Appointment.status != "CANCELLED",
@@ -416,5 +417,20 @@ def update_doctor_last_login(auth_id):
         if auth:
             auth.last_login_at = datetime.utcnow()
             db.commit()
+    finally:
+        db.close()
+
+
+def get_doctor_auth_by_doctor_id(doctor_id):
+    db = SessionLocal()
+    try:
+        return (
+            db.query(DoctorAuth)
+            .filter(
+                DoctorAuth.doctor_id == doctor_id,
+                DoctorAuth.is_active == True
+            )
+            .first()
+        )
     finally:
         db.close()
