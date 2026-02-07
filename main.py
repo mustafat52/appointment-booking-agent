@@ -792,15 +792,15 @@ def doctor_signup(payload: DoctorSignupRequest):
 
     return {"status": "account_created"}
 
-
-from fastapi import Request
-from fastapi.responses import PlainTextResponse
+from twilio.twiml.messaging_response import MessagingResponse
 
 @app.post("/whatsapp/webhook")
 async def whatsapp_webhook(request: Request):
     payload = await request.form()
     print("📩 WhatsApp payload:", dict(payload))
 
-    return PlainTextResponse(
-        "WhatsApp connected successfully. Booking will be available shortly."
-    )
+    resp = MessagingResponse()
+    resp.message("WhatsApp connected successfully. Booking will be available shortly.")
+
+    return PlainTextResponse(str(resp), media_type="application/xml")
+
