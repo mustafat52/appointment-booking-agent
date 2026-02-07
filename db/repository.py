@@ -182,7 +182,9 @@ def reschedule_appointment_db(
 
         appt.appointment_date = new_date
         appt.appointment_time = new_time
-        appt.calendar_event_id = new_calendar_event_id
+        if new_calendar_event_id is not None:
+            appt.calendar_event_id = new_calendar_event_id
+
         appt.updated_at = func.now()
 
         db.commit()

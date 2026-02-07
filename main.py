@@ -26,7 +26,7 @@ from db.repository import (create_doctor, doctor_exists, get_doctor_by_slug,get_
                            get_doctor_auth_by_doctor_id,create_doctor_auth)
 
 
-from tools import cancel_appointment, check_availability, update_calendar_event
+from tools import cancel_appointment_by_id, check_availability, update_calendar_event
 from email_service import send_daily_appointments_email
 
 from auth_utils import hash_password, verify_password
@@ -618,15 +618,11 @@ def cancel_appointment_secure(
     if appt.doctor_id != doctor_id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # 4️⃣ Cancel in DB
-    cancel_appointment_db(appointment_id)
+    cancel_appointment_by_id(
+    appointment_id=appointment_id,
+    doctor_id=doctor_id
+    )
 
-    # 5️⃣ Cancel calendar event (reuse existing logic)
-    if appt.calendar_event_id:
-        cancel_appointment(
-            event_id=appt.calendar_event_id,
-            doctor_id=str(doctor_id)
-        )
 
     print(
     f"[AUDIT] doctor={doctor_id} "
@@ -654,7 +650,12 @@ def reschedule_appointment_secure(
     if not appt:
         raise HTTPException(status_code=404, detail="Appointment not found")
     
-    
+    if appt.status == "BOOKED" and not appt.calendar_event_id:
+        raise HTTPException(
+            status_code=500,
+            detail="Invariant violation: booked appointment missing calendar event"
+        )
+
     # ✅ ADD THIS BLOCK HERE
     if appt.status != "BOOKED":
         raise HTTPException(
@@ -685,7 +686,7 @@ def reschedule_appointment_secure(
         appointment_id=appointment_id,
         new_date=payload.new_date,
         new_time=payload.new_time,
-        new_calendar_event_id=new_event_id,
+        new_calendar_event_id=appt.calendar_event_id, 
     )
 
 
