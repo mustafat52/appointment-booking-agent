@@ -25,23 +25,32 @@ document.addEventListener("DOMContentLoaded", () => {
   // -----------------------------
   // Auth guard
   // -----------------------------
-  async function ensureLoggedIn() {
-    try {
-      const res = await fetch("/auth/doctor/me", {
-        credentials: "include"
-      });
+async function ensureLoggedIn() {
+  try {
+    const res = await fetch("/auth/doctor/me", {
+      credentials: "include"
+    });
 
-      if (!res.ok) {
-        window.location.href = "/static/doc_login.html";
-        return false;
-      }
-      return true;
-    } catch (error) {
-      console.error("Auth check failed:", error);
+    if (!res.ok) {
       window.location.href = "/static/doc_login.html";
       return false;
     }
+
+    const doctor = await res.json();
+
+    // ✅ Personalised welcome message
+    const welcomeEl = document.getElementById("welcomeMessage");
+    if (welcomeEl && doctor.name) {
+      welcomeEl.textContent = `Welcome back, Dr. ${doctor.name} 👋`;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Auth check failed:", error);
+    window.location.href = "/static/doc_login.html";
+    return false;
   }
+}
 
   // -----------------------------
   // Load appointments

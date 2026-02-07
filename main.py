@@ -635,6 +635,7 @@ def cancel_appointment_secure(
 
 
 
+from tools import is_working_day, check_availability
 
 @app.post("/api/doctor/appointments/{appointment_id}/reschedule")
 def reschedule_appointment_secure(
@@ -642,63 +643,103 @@ def reschedule_appointment_secure(
     payload: DoctorRescheduleRequest,
     request: Request
 ):
-    # 1️⃣ Identify logged-in doctor (SESSION BASED)
+    # 1️⃣ Identify logged-in doctor
     doctor_id = require_doctor(request)
 
     # 2️⃣ Fetch appointment
     appt = get_appointment_by_id(appointment_id)
     if not appt:
         raise HTTPException(status_code=404, detail="Appointment not found")
-    
-    if appt.status == "BOOKED" and not appt.calendar_event_id:
+
+    # 3️⃣ Status guard
+    if appt.status != "BOOKED":
+        raise HTTPException(
+            status_code=400,
+            detail="Only booked appointments can be rescheduled"
+        )
+
+    # 4️⃣ Authorization
+    if appt.doctor_id != doctor_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # 5️⃣ Invariant guard
+    if not appt.calendar_event_id:
         raise HTTPException(
             status_code=500,
             detail="Invariant violation: booked appointment missing calendar event"
         )
 
-    # ✅ ADD THIS BLOCK HERE
-    if appt.status != "BOOKED":
+    # ---------------------------
+    # 🔒 STRICT VALIDATIONS BEGIN
+    # ---------------------------
+
+    # 6️⃣ Working day validation
+    if not is_working_day(str(payload.new_date), doctor_id):
         raise HTTPException(
-        status_code=400,
-        detail="Only booked appointments can be rescheduled"
-    )
+            status_code=400,
+            detail="Doctor is not available on the selected day"
+        )
 
-    
-    # 3️⃣ Authorization check
-    if appt.doctor_id != doctor_id:
-        raise HTTPException(status_code=403, detail="Not authorized")
+    # 7️⃣ Working hour validation
+    doctor = get_doctor_by_id(doctor_id)
+    new_time = payload.new_time
 
-    # 4️⃣ Reschedule in DB
-    new_event_id = None
-    if appt.calendar_event_id:
-        try:
-            new_event_id = update_calendar_event(
-                doctor_id=doctor_id,
-                event_id=appt.calendar_event_id,
-                new_date=str(payload.new_date),
-                new_time=payload.new_time.strftime("%H:%M"),
-            )
-        except Exception as e:
-            print(f"⚠️ Failed to update calendar event: {str(e)}")    
+    if not (doctor.work_start_time <= new_time < doctor.work_end_time):
+        raise HTTPException(
+            status_code=400,
+            detail="Selected time is outside doctor's working hours"
+        )
 
-    # 5️⃣ Update DB with new date/time + calendar event id
+    # 8️⃣ Availability check (exclude current appointment)
+    if not check_availability(
+        str(payload.new_date),
+        new_time.strftime("%H:%M"),
+        doctor_id,
+        exclude_appointment_id=appointment_id
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Selected slot is already booked"
+        )
+
+    # ---------------------------
+    # ✅ SIDE-EFFECT FIRST
+    # ---------------------------
+
+    try:
+        update_calendar_event(
+            doctor_id=doctor_id,
+            event_id=appt.calendar_event_id,
+            new_date=str(payload.new_date),
+            new_time=new_time.strftime("%H:%M"),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to update calendar event"
+        )
+
+    # ---------------------------
+    # ✅ STATE UPDATE (IDENTITY PRESERVED)
+    # ---------------------------
+
     reschedule_appointment_db(
         appointment_id=appointment_id,
         new_date=payload.new_date,
-        new_time=payload.new_time,
-        new_calendar_event_id=appt.calendar_event_id, 
+        new_time=new_time,
+        new_calendar_event_id=appt.calendar_event_id
     )
 
-
     print(
-    f"[AUDIT] doctor={doctor_id} "
-    f"action=reschedule "
-    f"appointment={appointment_id} "
-    f"new_date={payload.new_date} "
-    f"new_time={payload.new_time}"
-)
+        f"[AUDIT] doctor={doctor_id} "
+        f"action=reschedule "
+        f"appointment={appointment_id} "
+        f"new_date={payload.new_date} "
+        f"new_time={new_time}"
+    )
 
     return {"status": "rescheduled"}
+
 
 
 
