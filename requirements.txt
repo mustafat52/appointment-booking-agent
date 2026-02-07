@@ -65,3 +65,5 @@ email-validator
 resend 
 passlib==1.7.4
 bcrypt==4.0.1
+python-multipart==0.0.5
+python-jose==3.3.0
