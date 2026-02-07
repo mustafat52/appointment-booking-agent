@@ -793,6 +793,8 @@ def doctor_signup(payload: DoctorSignupRequest):
     return {"status": "account_created"}
 
 from twilio.twiml.messaging_response import MessagingResponse
+from fastapi.responses import PlainTextResponse
+
 
 @app.post("/whatsapp/webhook")
 async def whatsapp_webhook(request: Request):
