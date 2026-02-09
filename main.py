@@ -13,7 +13,7 @@ import uuid
 from schema import ChatRequest, ChatResponse, DoctorRescheduleRequest
 from agent import run_agent
 from state import BookingState
-
+from channel.web import init_session, handle_web_message
 from calendar_oauth import get_oauth_flow , build_calendar_service
 from auth_store import oauth_store
 
@@ -64,7 +64,7 @@ def serve_homepage():
 
 
 # session_id -> BookingState
-state_store: Dict[str, BookingState] = {}
+
 
 
 # -------------------------------
@@ -123,15 +123,11 @@ def serve_doctor_ui(doctor_slug: str, request: Request):
     if not session_id:
         session_id = str(uuid.uuid4())
 
-    if session_id not in state_store:
-        state_store[session_id] = BookingState()
-
-    state = state_store[session_id]
-
-    state.reset_flow()
-    state.doctor_id = doctor["id"]
-    state.doctor_name = doctor["name"]
-    state.greeted = False
+    init_session(
+    session_id=session_id,
+    doctor_id=doctor["id"],
+    doctor_name=doctor["name"]
+    )
 
     with open("static/index.html", "r", encoding="utf-8") as f:
         html = f.read()
@@ -162,25 +158,9 @@ def chat(req: ChatRequest, request: Request):
         )
 
 
-    if session_id not in state_store:
-        state_store[session_id] = BookingState()
-
-    state = state_store[session_id]
-
-    if not state.doctor_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Doctor context is missing. Please start booking via the doctor's booking link."
-        )
-
-    try:
-        reply = run_agent(req.message, state)
-        
-    except Exception as e:
-        state.reset_flow()
-        reply = (
-        "⚠️ Something went wrong on our side.\n"
-        "Let's start fresh. How can I help you?"
+    reply = handle_web_message(
+        session_id=session_id,
+        user_message=req.message
     )
         
     return ChatResponse(reply=reply)
