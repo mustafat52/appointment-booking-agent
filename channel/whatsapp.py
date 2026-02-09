@@ -73,11 +73,17 @@ def handle_whatsapp_message(
     session = whatsapp_state_store[from_number]
     msg = message_body.strip()
 
-    # First interaction → show menu
     if session.stage == WhatsAppStage.START:
         session.stage = WhatsAppStage.MENU
-        session.booking_state = None
-        return MENU_TEXT
+
+        # Initialize booking state so agent can greet
+        session.booking_state = init_booking_state()
+
+        # Let agent produce the greeting
+        greeting = run_agent("", session.booking_state)
+
+        return greeting + "\n\n" + MENU_TEXT
+
 
     # Menu stage → expect number
     if session.stage == WhatsAppStage.MENU:
