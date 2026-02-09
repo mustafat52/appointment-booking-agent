@@ -100,6 +100,20 @@ def get_or_create_patient(name: str, phone: str) -> Patient:
     finally:
         db.close()
 
+def create_patient(
+    db: Session,
+    *,
+    name: str,
+    phone: str
+) -> Patient:
+    patient = Patient(
+        name=name,
+        phone=phone,
+    )
+    db.add(patient)
+    db.flush()  # ensures patient.id is available
+    return patient
+
 
 # 🔹 NEW (Phase 6.5): fetch patient WITHOUT creating
 def get_patient_by_phone(phone: str) -> Patient | None:

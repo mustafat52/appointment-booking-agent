@@ -13,7 +13,7 @@ from db.models import DoctorCalendarCredential
 
 
 from db.repository import (
-    get_or_create_patient,
+    create_patient,
     create_appointment,
     get_appointment_by_event_id,
     cancel_appointment_db,
@@ -188,7 +188,7 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
         raise ValueError("Doctor not found during booking")
 
 
-    patient = get_or_create_patient(patient_name, patient_phone)
+    patient = create_patient(patient_name, patient_phone)
 # ❗ Calendar creation is MANDATORY
 
 
