@@ -82,7 +82,7 @@ def handle_whatsapp_message(
         # Let agent produce the greeting
         greeting = run_agent("", session.booking_state)
 
-        return greeting + "\n\n" + MENU_TEXT
+        return greeting + "\n\n" + MENU_TEXT   #birmak greeting 
 
 
     # Menu stage → expect number
