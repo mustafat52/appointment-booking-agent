@@ -179,98 +179,101 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
     if not doctor_id:
         raise ValueError("Doctor context missing during booking")
 
-    
-
-    # Existing behavior preserved intentionally
-    from db.repository import get_doctor_by_slug
-    doctor_db = get_doctor_by_id(doctor_id)
-    if not doctor_db:
-        raise ValueError("Doctor not found during booking")
-
-
-    patient = create_patient(patient_name, patient_phone)
-# ❗ Calendar creation is MANDATORY
-
-
-    if DISABLE_CALENDAR:
-        raise RuntimeError("Calendar integration is disabled")
-
-    credentials = get_credentials_for_doctor(doctor_id)
-    if not credentials:
-        raise RuntimeError("Doctor calendar is not connected")
-
-    service = build_calendar_service(credentials)
-    tz = pytz.timezone(TIMEZONE)
-
-    start_dt = tz.localize(
-        datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
-    )
-
-    if not doctor_db.avg_consult_minutes:
-        raise RuntimeError("Doctor consultation duration not configured")
-
-    end_dt = start_dt + timedelta(
-        minutes=doctor_db.avg_consult_minutes
-    )
-
-    calendar_id = get_calendar_id_for_doctor(doctor_id)
-
-    event = {
-        "summary": f"Patient Appointment – {patient_name}",
-        "description": (
-            f"Doctor: {doctor_db.name}\n"
-            f"Patient Name: {patient_name}\n"
-            f"Phone: {patient_phone}\n\n"
-            f"Booked via AI Appointment Agent"
-        ),
-        "start": {
-            "dateTime": start_dt.isoformat(),
-            "timeZone": TIMEZONE,
-        },
-        "end": {
-            "dateTime": end_dt.isoformat(),
-            "timeZone": TIMEZONE,
-        },
-    }
-
+    db = SessionLocal()
     try:
+        doctor_db = get_doctor_by_id(doctor_id)
+        if not doctor_db:
+            raise ValueError("Doctor not found during booking")
+
+        # ✅ ALWAYS create a new patient
+        patient = create_patient(
+            db,
+            name=patient_name,
+            phone=patient_phone
+        )
+
+        # ❗ Calendar creation is MANDATORY
+        if DISABLE_CALENDAR:
+            raise RuntimeError("Calendar integration is disabled")
+
+        credentials = get_credentials_for_doctor(doctor_id)
+        if not credentials:
+            raise RuntimeError("Doctor calendar is not connected")
+
+        service = build_calendar_service(credentials)
+        tz = pytz.timezone(TIMEZONE)
+
+        start_dt = tz.localize(
+            datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+        )
+
+        if not doctor_db.avg_consult_minutes:
+            raise RuntimeError("Doctor consultation duration not configured")
+
+        end_dt = start_dt + timedelta(
+            minutes=doctor_db.avg_consult_minutes
+        )
+
+        calendar_id = get_calendar_id_for_doctor(doctor_id)
+
+        event = {
+            "summary": f"Patient Appointment – {patient_name}",
+            "description": (
+                f"Doctor: {doctor_db.name}\n"
+                f"Patient Name: {patient_name}\n"
+                f"Phone: {patient_phone}\n\n"
+                f"Booked via AI Appointment Agent"
+            ),
+            "start": {
+                "dateTime": start_dt.isoformat(),
+                "timeZone": TIMEZONE,
+            },
+            "end": {
+                "dateTime": end_dt.isoformat(),
+                "timeZone": TIMEZONE,
+            },
+        }
+
         created = service.events().insert(
             calendarId=calendar_id,
             body=event
         ).execute()
-    except Exception as e:
-        raise RuntimeError(f"Calendar event creation failed: {str(e)}")
 
-    event_id = created["id"]
+        event_id = created["id"]
 
+        appt = create_appointment(
+            db,
+            doctor_id=doctor_db.doctor_id,
+            patient_id=patient.patient_id,
+            appointment_date=datetime.strptime(date_str, "%Y-%m-%d").date(),
+            appointment_time=datetime.strptime(time_str, "%H:%M").time(),
+            status="BOOKED",
+            calendar_event_id=event_id,
+        )
 
-    appt = create_appointment(
-        doctor_id=doctor_db.doctor_id,
-        patient_id=patient.patient_id,
-        appointment_date=datetime.strptime(date_str, "%Y-%m-%d").date(),
-        appointment_time=datetime.strptime(time_str, "%H:%M").time(),
-        status="BOOKED",
-        calendar_event_id=event_id,
-    )
+        if not appt or not appt.calendar_event_id:
+            # rollback calendar event
+            service.events().delete(
+                calendarId=calendar_id,
+                eventId=event_id
+            ).execute()
+            raise RuntimeError("Appointment creation failed after calendar event creation")
 
+        db.commit()
 
+        return {
+            "appointment_id": appt.appointment_id,
+            "event_id": event_id,
+            "date": date_str,
+            "time": time_str,
+        }
 
-    
-    if not appt or not appt.calendar_event_id:
-    # rollback calendar event
-        service.events().delete(
-            calendarId=calendar_id,
-            eventId=event_id
-        ).execute()
-        raise RuntimeError("Appointment creation failed after calendar event creation")
+    except Exception:
+        db.rollback()
+        raise
 
-    return {
-        "appointment_id": appt.appointment_id,
-        "event_id": event_id,
-        "date": date_str,
-        "time": time_str,
-    }
-
+    finally:
+        db.close()
 
 # ------------------------------------------------------------------
 # Cancel (calendar deletion now DB-first)
