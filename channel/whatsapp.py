@@ -1,5 +1,22 @@
 from enum import Enum
 from typing import Dict
+from agent import run_agent
+from state import BookingState
+
+
+
+TEST_DOCTOR_ID = "078b91b2-c31e-46af-bf3c-e77cf3dae63c"
+TEST_DOCTOR_NAME = "Mustafa Taj"
+
+
+def init_booking_state() -> BookingState:
+    state = BookingState()
+    state.reset_flow()
+    state.doctor_id = TEST_DOCTOR_ID
+    state.doctor_name = TEST_DOCTOR_NAME
+    state.greeted = False
+    return state
+
 
 
 class WhatsAppStage(str, Enum):
@@ -7,9 +24,13 @@ class WhatsAppStage(str, Enum):
     MENU = "MENU"
 
 
+
+
 class WhatsAppSession:
     def __init__(self):
         self.stage = WhatsAppStage.START
+        self.booking_state: BookingState | None = None
+
 
 
 # phone_number -> WhatsAppSession
@@ -33,18 +54,17 @@ MENU_MAP = {
     "0": "reset",
 }
 
-
 def handle_whatsapp_message(
     *,
     from_number: str,
     message_body: str
 ) -> str:
     """
-    Phase 2 handler:
+    Phase 3 handler:
     - show menu
     - accept numeric input
     - normalize intent
-    - NO agent call yet
+    - delegate to agent with hardcoded doctor
     """
 
     if from_number not in whatsapp_state_store:
@@ -56,29 +76,39 @@ def handle_whatsapp_message(
     # First interaction → show menu
     if session.stage == WhatsAppStage.START:
         session.stage = WhatsAppStage.MENU
+        session.booking_state = None
         return MENU_TEXT
 
     # Menu stage → expect number
     if session.stage == WhatsAppStage.MENU:
         if msg not in MENU_MAP:
-            return (
-                "❌ Invalid option.\n\n"
-                + MENU_TEXT
-            )
+            return "❌ Invalid option.\n\n" + MENU_TEXT
 
         intent = MENU_MAP[msg]
 
         if intent == "reset":
             session.stage = WhatsAppStage.START
+            session.booking_state = None
             return "🔄 Reset successful.\n\n" + MENU_TEXT
 
-        # Phase-2 stop point
-        return (
-            f"✅ You selected *{intent.upper()}*.\n\n"
-            "⚠️ Booking flow will be enabled next.\n"
-            "For now, this confirms menu handling works."
-        )
+        # Initialize booking state once
+        if session.booking_state is None:
+            session.booking_state = init_booking_state()
 
-    # Fallback (should never hit)
+        # Delegate to agent with normalized intent
+        try:
+            reply = run_agent(intent, session.booking_state)
+        except Exception:
+            session.booking_state.reset_flow()
+            session.booking_state = None
+            return (
+                "⚠️ Something went wrong.\n"
+                "Let’s start again.\n\n" + MENU_TEXT
+            )
+
+        return reply
+
+    # Fallback safety
     session.stage = WhatsAppStage.START
+    session.booking_state = None
     return MENU_TEXT
