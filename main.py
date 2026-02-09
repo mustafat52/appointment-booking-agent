@@ -7,16 +7,17 @@ from datetime import time
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, HTTPException,Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse,HTMLResponse
+from fastapi.responses import FileResponse, RedirectResponse,HTMLResponse, Response
 from pydantic import BaseModel, EmailStr
 import uuid
 from schema import ChatRequest, ChatResponse, DoctorRescheduleRequest
 from agent import run_agent
 from state import BookingState
 from channel.web import init_session, handle_web_message
+from channel.whatsapp import handle_whatsapp_message, whatsapp_state_store
 from calendar_oauth import get_oauth_flow , build_calendar_service
 from auth_store import oauth_store
-
+from twilio.twiml.messaging_response import MessagingResponse
 from doctor_config import DOCTORS
 
 from db.repository import (create_doctor, doctor_exists, get_doctor_by_slug,get_doctor_by_email, 
@@ -772,17 +773,22 @@ def doctor_signup(payload: DoctorSignupRequest):
 
     return {"status": "account_created"}
 
-from fastapi import Request
-from fastapi.responses import Response
-from twilio.twiml.messaging_response import MessagingResponse
+
 
 @app.post("/whatsapp/webhook")
 async def whatsapp_webhook(request: Request):
     payload = await request.form()
-    print("📩 WhatsApp payload:", dict(payload))
+
+    from_number = payload.get("From")        # whatsapp:+91...
+    body = payload.get("Body", "")
+
+    reply_text = handle_whatsapp_message(
+        from_number=from_number,
+        message_body=body
+    )
 
     twiml = MessagingResponse()
-    twiml.message("WhatsApp connected successfully. Booking will be available shortly.")
+    twiml.message(reply_text)
 
     return Response(
         content=str(twiml),
