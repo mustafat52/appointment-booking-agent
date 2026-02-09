@@ -121,13 +121,20 @@ def handle_whatsapp_message(
             session.booking_state = None
             return "⚠️ Something went wrong.\n\n" + MENU_TEXT
 
-        # If agent finished flow → reset to menu
-        if session.booking_state and session.booking_state.is_complete():
+        TERMINAL_KEYWORDS = (
+            "successfully",
+            "booked",
+            "cancelled",
+            "rescheduled",
+        )
+
+        if any(k in reply.lower() for k in TERMINAL_KEYWORDS):
             session.stage = WhatsAppStage.START
             session.booking_state = None
             return reply + "\n\n" + MENU_TEXT
 
         return reply
+
 
     # --------------------------------------------------
     # Fallback safety
