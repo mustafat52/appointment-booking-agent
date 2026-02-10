@@ -129,5 +129,5 @@ class BookingState:
         self.pending_intent_switch = None
 
 
-def is_done(self) -> bool:
-    return self.stage == FlowStage.IDLE
+    def is_done(self) -> bool:
+        return self.stage == FlowStage.IDLE

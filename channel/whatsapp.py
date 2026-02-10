@@ -51,11 +51,12 @@ MENU_TEXT = (
 )
 
 MENU_MAP = {
-    "1": "book",
-    "2": "cancel",
-    "3": "reschedule",
-    "0": "reset",
+    "1": "BOOK",
+    "2": "CANCEL",
+    "3": "RESCHEDULE",
+    "0": "RESET",
 }
+
 
 
 # --------------------------------------------------
