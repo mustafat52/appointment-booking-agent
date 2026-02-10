@@ -73,19 +73,17 @@ def handle_whatsapp_message(
     session = whatsapp_state_store[from_number]
     msg = message_body.strip()
 
-    # --------------------------------------------------
-    # START → greet + menu (agent owns greeting)
-    # --------------------------------------------------
+    # -------------------------
+    # START → show greeting + menu
+    # -------------------------
     if session.stage == WhatsAppStage.START:
         session.stage = WhatsAppStage.MENU
-        session.booking_state = init_booking_state()
+        session.booking_state = None
+        return MENU_TEXT
 
-        greeting = run_agent("", session.booking_state)
-        return greeting + "\n\n" + MENU_TEXT
-
-    # --------------------------------------------------
-    # MENU → numeric choice only
-    # --------------------------------------------------
+    # -------------------------
+    # MENU → expect numeric input ONLY
+    # -------------------------
     if session.stage == WhatsAppStage.MENU:
         if msg not in MENU_MAP:
             return "❌ Invalid option.\n\n" + MENU_TEXT
@@ -97,12 +95,11 @@ def handle_whatsapp_message(
             session.booking_state = None
             return "🔄 Reset successful.\n\n" + MENU_TEXT
 
-        if session.booking_state is None:
-            session.booking_state = init_booking_state()
-
-        # move into agent mode
+        # Initialize booking + move to AGENT
+        session.booking_state = init_booking_state()
         session.stage = WhatsAppStage.AGENT
 
+        # First agent response (intent-based)
         try:
             return run_agent(intent, session.booking_state)
         except Exception:
@@ -110,9 +107,9 @@ def handle_whatsapp_message(
             session.booking_state = None
             return "⚠️ Something went wrong.\n\n" + MENU_TEXT
 
-    # --------------------------------------------------
-    # AGENT → free-form conversation
-    # --------------------------------------------------
+    # -------------------------
+    # AGENT → agent owns EVERYTHING
+    # -------------------------
     if session.stage == WhatsAppStage.AGENT:
         try:
             reply = run_agent(msg, session.booking_state)
@@ -121,24 +118,17 @@ def handle_whatsapp_message(
             session.booking_state = None
             return "⚠️ Something went wrong.\n\n" + MENU_TEXT
 
-        TERMINAL_KEYWORDS = (
-            "successfully",
-            "booked",
-            "cancelled",
-            "rescheduled",
-        )
-
-        if any(k in reply.lower() for k in TERMINAL_KEYWORDS):
+        # If booking finished, reset back to menu
+        if session.booking_state and session.booking_state.greeted is False:
             session.stage = WhatsAppStage.START
             session.booking_state = None
             return reply + "\n\n" + MENU_TEXT
 
         return reply
 
-
-    # --------------------------------------------------
-    # Fallback safety
-    # --------------------------------------------------
+    # -------------------------
+    # Safety fallback
+    # -------------------------
     session.stage = WhatsAppStage.START
     session.booking_state = None
     return MENU_TEXT
