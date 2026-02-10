@@ -774,18 +774,29 @@ def doctor_signup(payload: DoctorSignupRequest):
     return {"status": "account_created"}
 
 
+from fastapi.responses import Response
+from twilio.twiml.messaging_response import MessagingResponse
 
 @app.post("/whatsapp/webhook")
 async def whatsapp_webhook(request: Request):
-    payload = await request.form()
+    try:
+        payload = await request.form()
 
-    from_number = payload.get("From")        # whatsapp:+91...
-    body = payload.get("Body", "")
+        from_number = payload.get("From")   # whatsapp:+91...
+        body = payload.get("Body", "").strip()
 
-    reply_text = handle_whatsapp_message(
-        from_number=from_number,
-        message_body=body
-    )
+        reply_text = handle_whatsapp_message(
+            from_number=from_number,
+            message_body=body
+        )
+
+    except Exception as e:
+        # Never let Twilio see a failure
+        print("❌ WhatsApp webhook error:", str(e))
+        reply_text = (
+            "⚠️ Sorry, something went wrong.\n"
+            "Please type 0 to restart."
+        )
 
     twiml = MessagingResponse()
     twiml.message(reply_text)
