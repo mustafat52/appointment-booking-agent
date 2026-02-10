@@ -61,29 +61,45 @@ MENU_MAP = {
 # --------------------------------------------------
 # Main WhatsApp handler
 # --------------------------------------------------
-def handle_whatsapp_message(
-    *,
-    from_number: str,
-    message_body: str
-) -> str:
-
+def handle_whatsapp_message(*, from_number: str, message_body: str) -> str:
     if from_number not in whatsapp_state_store:
         whatsapp_state_store[from_number] = WhatsAppSession()
 
     session = whatsapp_state_store[from_number]
     msg = message_body.strip()
 
-    # -------------------------
-    # START → show greeting + menu
-    # -------------------------
+    # --------------------------------------------------
+    # START → greet + menu (agent owns greeting)
+    # --------------------------------------------------
     if session.stage == WhatsAppStage.START:
         session.stage = WhatsAppStage.MENU
-        session.booking_state = None
-        return MENU_TEXT
+        session.booking_state = init_booking_state()
 
-    # -------------------------
-    # MENU → expect numeric input ONLY
-    # -------------------------
+        greeting = run_agent("", session.booking_state)
+        return greeting + "\n\n" + MENU_TEXT
+
+    # --------------------------------------------------
+    # AGENT → agent owns ALL free-form messages
+    # --------------------------------------------------
+    if session.stage == WhatsAppStage.AGENT:
+        try:
+            reply = run_agent(msg, session.booking_state)
+        except Exception:
+            session.stage = WhatsAppStage.START
+            session.booking_state = None
+            return "⚠️ Something went wrong.\n\n" + MENU_TEXT
+
+        # ✅ EXIT agent ONLY when state says done
+        if session.booking_state and session.booking_state.is_done():
+            session.stage = WhatsAppStage.START
+            session.booking_state = None
+            return reply + "\n\n" + MENU_TEXT
+
+        return reply
+
+    # --------------------------------------------------
+    # MENU → numeric options ONLY
+    # --------------------------------------------------
     if session.stage == WhatsAppStage.MENU:
         if msg not in MENU_MAP:
             return "❌ Invalid option.\n\n" + MENU_TEXT
@@ -95,41 +111,13 @@ def handle_whatsapp_message(
             session.booking_state = None
             return "🔄 Reset successful.\n\n" + MENU_TEXT
 
-        # Initialize booking + move to AGENT
-        session.booking_state = init_booking_state()
+        # Move into agent mode
         session.stage = WhatsAppStage.AGENT
+        return run_agent(intent, session.booking_state)
 
-        # First agent response (intent-based)
-        try:
-            return run_agent(intent, session.booking_state)
-        except Exception:
-            session.stage = WhatsAppStage.START
-            session.booking_state = None
-            return "⚠️ Something went wrong.\n\n" + MENU_TEXT
-
-    # -------------------------
-    # AGENT → agent owns EVERYTHING
-    # -------------------------
-    if session.stage == WhatsAppStage.AGENT:
-        try:
-            reply = run_agent(msg, session.booking_state)
-        except Exception:
-            session.stage = WhatsAppStage.START
-            session.booking_state = None
-            return "⚠️ Something went wrong.\n\n" + MENU_TEXT
-
-        # ✅ Exit ONLY after full completion (post-confirmation)
-        if session.booking_state and session.booking_state.is_done():
-            session.stage = WhatsAppStage.START
-            session.booking_state = None
-            return reply + "\n\n" + MENU_TEXT
-
-        return reply
-
-
-    # -------------------------
-    # Safety fallback
-    # -------------------------
+    # --------------------------------------------------
+    # Safety fallback (should never happen)
+    # --------------------------------------------------
     session.stage = WhatsAppStage.START
     session.booking_state = None
     return MENU_TEXT
