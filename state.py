@@ -127,3 +127,7 @@ class BookingState:
         self.reschedule_date = None
         self.reschedule_time = None
         self.pending_intent_switch = None
+
+
+def is_done(self) -> bool:
+    return self.stage == FlowStage.IDLE

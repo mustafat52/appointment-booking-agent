@@ -118,13 +118,14 @@ def handle_whatsapp_message(
             session.booking_state = None
             return "⚠️ Something went wrong.\n\n" + MENU_TEXT
 
-        # If booking finished, reset back to menu
-        if session.booking_state and session.booking_state.greeted is False:
+        # ✅ Exit ONLY after full completion (post-confirmation)
+        if session.booking_state and session.booking_state.is_done():
             session.stage = WhatsAppStage.START
             session.booking_state = None
             return reply + "\n\n" + MENU_TEXT
 
         return reply
+
 
     # -------------------------
     # Safety fallback
