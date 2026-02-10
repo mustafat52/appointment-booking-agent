@@ -130,6 +130,7 @@ def get_patient_by_phone(phone: str) -> Patient | None:
 # -------------------------
 
 def create_appointment(
+    db,
     *,
     doctor_id,
     patient_id,
@@ -368,12 +369,8 @@ def get_doctor_calendar_credentials(doctor_id):
         db.close()
 
 
-def get_doctor_by_id(doctor_id):
-    db = get_db_session()
-    try:
-        return db.get(Doctor, doctor_id)
-    finally:
-        db.close()
+def get_doctor_by_id(db, doctor_id):
+    return db.get(Doctor, doctor_id)
 
 
 from datetime import date

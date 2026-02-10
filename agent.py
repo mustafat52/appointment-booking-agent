@@ -43,7 +43,7 @@ def is_within_clinic_hours(time_str: str, doctor_id) -> bool:
     """
     Checks whether the given HH:MM time is within doctor's clinic hours.
     """
-    doctor = get_doctor_by_id(doctor_id)
+    doctor = get_doctor_by_id(db,doctor_id)
     if not doctor:
         return False
 
@@ -657,12 +657,9 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 state.patient_name,
                 state.patient_phone,
             )
-            except Exception:
+            except Exception as e:
                 state.reset_flow()
-                return (
-                "⚠️ I couldn’t complete the booking right now.\n"
-                "Please try again in a moment."
-            )
+                return f"❌ Booking failed: {str(e)}"
         
 
             state.last_appointment_id = booking["appointment_id"]
