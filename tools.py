@@ -12,6 +12,7 @@ from db.database import SessionLocal
 from db.models import DoctorCalendarCredential
 
 
+
 from db.repository import (
     create_patient,
     create_appointment,
@@ -20,6 +21,7 @@ from db.repository import (
     reschedule_appointment_db,
     get_doctor_by_id,
     get_appointment_by_id,
+    get_doctor_by_id
 )
 
 TIMEZONE = "Asia/Kolkata"
@@ -181,7 +183,7 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
 
     db = SessionLocal()
     try:
-        doctor_db = get_doctor_by_id(doctor_id)
+        doctor_db = get_doctor_by_id(db,doctor_id)
         if not doctor_db:
             raise ValueError("Doctor not found during booking")
 
@@ -385,3 +387,18 @@ def update_calendar_event(
         body=event
     ).execute()
 
+
+
+
+def is_within_clinic_hours(time_str: str, doctor_id) -> bool:
+    db = SessionLocal()
+    try:
+        doctor = get_doctor_by_id(db, doctor_id)
+        if not doctor:
+            return False
+
+        requested_time = datetime.strptime(time_str, "%H:%M").time()
+
+        return doctor.work_start_time <= requested_time <= doctor.work_end_time
+    finally:
+        db.close()

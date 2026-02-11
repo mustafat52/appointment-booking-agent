@@ -9,7 +9,7 @@ import state
 from tools import check_availability, book_appointment, cancel_appointment, is_working_day
 from state import FlowStage
 
-from tools import cancel_appointment_by_id, update_calendar_event
+from tools import cancel_appointment_by_id, update_calendar_event, is_within_clinic_hours
 from uuid import UUID
 from db.repository import reschedule_appointment_db
 
@@ -39,17 +39,6 @@ RESET_KEYWORDS = {
 # ---------------------------
 
 
-def is_within_clinic_hours(time_str: str, doctor_id) -> bool:
-    """
-    Checks whether the given HH:MM time is within doctor's clinic hours.
-    """
-    doctor = get_doctor_by_id(db,doctor_id)
-    if not doctor:
-        return False
-
-    requested_time = datetime.strptime(time_str, "%H:%M").time()
-
-    return doctor.work_start_time <= requested_time <= doctor.work_end_time
 
 def normalize_time(text: str):
     if not text:
@@ -585,7 +574,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
             
 
             if not is_within_clinic_hours(t, doctor_id):
-                doctor = get_doctor_by_id(doctor_id)
+                
                 return (
                     "❌ The doctor is not available at that time.\n\n"
                     f"🕒 Clinic hours are "
