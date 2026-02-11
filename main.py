@@ -35,12 +35,7 @@ from auth_utils import hash_password, verify_password
 
 app = FastAPI()
 
-from starlette.middleware.sessions import SessionMiddleware
 
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=os.getenv("SESSION_SECRET")
-)
 
 doctor_sessions = {}
 
@@ -566,9 +561,15 @@ def doctor_logout(request: Request, response: Response):
 
 @app.get("/auth/doctor/me")
 def doctor_me(request: Request):
-    doctor_id = request.session.get("doctor_id")
-    if not doctor_id:
+    session_id = request.cookies.get("doctor_session")
+
+    if not session_id:
         return JSONResponse(status_code=401, content={"error": "Not logged in"})
+
+    doctor_id = doctor_sessions.get(session_id)
+
+    if not doctor_id:
+        return JSONResponse(status_code=401, content={"error": "Invalid session"})
 
     db = SessionLocal()
     try:
