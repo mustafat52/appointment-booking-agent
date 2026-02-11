@@ -35,6 +35,12 @@ from auth_utils import hash_password, verify_password
 
 app = FastAPI()
 
+from starlette.middleware.sessions import SessionMiddleware
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SESSION_SECRET")
+)
 
 doctor_sessions = {}
 
