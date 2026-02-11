@@ -6,6 +6,11 @@ from alembic import context
 
 # ---- Alembic Config ----
 config = context.config
+config.set_main_option(
+    "sqlalchemy.url",
+    os.environ.get("DATABASE_URL")
+)
+
 
 # ---- Logging ----
 if config.config_file_name is not None:

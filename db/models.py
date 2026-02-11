@@ -44,7 +44,7 @@ class Patient(Base):
 
     patient_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
-    phone = Column(String, unique=True, nullable=False)
+    phone = Column(String,  nullable=False)
 
     first_seen_at = Column(TIMESTAMP, server_default=func.now())
     last_seen_at = Column(TIMESTAMP, server_default=func.now())
