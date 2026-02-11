@@ -7,7 +7,7 @@ from datetime import time
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, HTTPException,Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse,HTMLResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse,HTMLResponse, Response, JSONResponse
 from pydantic import BaseModel, EmailStr
 import uuid
 from schema import ChatRequest, ChatResponse, DoctorRescheduleRequest
@@ -19,7 +19,7 @@ from calendar_oauth import get_oauth_flow , build_calendar_service
 from auth_store import oauth_store
 from twilio.twiml.messaging_response import MessagingResponse
 from doctor_config import DOCTORS
-
+from db.database import SessionLocal
 from db.repository import (create_doctor, doctor_exists, get_doctor_by_slug,get_doctor_by_email, 
                            get_upcoming_appointments_for_doctor,
                            get_appointment_by_id, cancel_appointment_db , reschedule_appointment_db,
@@ -558,17 +558,25 @@ def doctor_logout(request: Request, response: Response):
     return {"status": "logged_out"}
 
 
-
 @app.get("/auth/doctor/me")
 def doctor_me(request: Request):
-    doctor_id = require_doctor(request)
-    doctor = get_doctor_by_id(doctor_id)
+    doctor_id = request.session.get("doctor_id")
+    if not doctor_id:
+        return JSONResponse(status_code=401, content={"error": "Not logged in"})
 
-    return {
-        "doctor_id": str(doctor.doctor_id),
-        "name": doctor.name,
-        "email": doctor.email,
-    }
+    db = SessionLocal()
+    try:
+        doctor = get_doctor_by_id(db, doctor_id)
+        if not doctor:
+            return JSONResponse(status_code=404, content={"error": "Doctor not found"})
+
+        return {
+            "doctor_id": doctor.doctor_id,
+            "name": doctor.name,
+            "email": doctor.email,
+        }
+    finally:
+        db.close()
 
 
 
