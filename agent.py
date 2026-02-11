@@ -599,6 +599,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
 
             state.time = t
             state.stage = FlowStage.BOOK_CONFIRM
+            return "May I know the patient’s name?"
 
 
         # ------------------

@@ -69,38 +69,14 @@ def handle_whatsapp_message(*, from_number: str, message_body: str) -> str:
     session = whatsapp_state_store[from_number]
     msg = message_body.strip()
 
-    # --------------------------------------------------
-    # START → greet + menu (agent owns greeting)
-    # --------------------------------------------------
+    # START → greet + menu
     if session.stage == WhatsAppStage.START:
-        session.stage = WhatsAppStage.MENU
         session.booking_state = init_booking_state()
-
+        session.stage = WhatsAppStage.MENU
         greeting = run_agent("", session.booking_state)
         return greeting + "\n\n" + MENU_TEXT
 
-    # --------------------------------------------------
-    # AGENT → agent owns ALL free-form messages
-    # --------------------------------------------------
-    if session.stage == WhatsAppStage.AGENT:
-        try:
-            reply = run_agent(msg, session.booking_state)
-        except Exception:
-            session.stage = WhatsAppStage.START
-            session.booking_state = None
-            return "⚠️ Something went wrong.\n\n" + MENU_TEXT
-
-        # ✅ EXIT agent ONLY when state says done
-        if session.booking_state and session.booking_state.is_done():
-            session.stage = WhatsAppStage.START
-            session.booking_state = None
-            return reply + "\n\n" + MENU_TEXT
-
-        return reply
-
-    # --------------------------------------------------
-    # MENU → numeric options ONLY
-    # --------------------------------------------------
+    # MENU → numeric only
     if session.stage == WhatsAppStage.MENU:
         if msg not in MENU_MAP:
             return "❌ Invalid option.\n\n" + MENU_TEXT
@@ -112,13 +88,16 @@ def handle_whatsapp_message(*, from_number: str, message_body: str) -> str:
             session.booking_state = None
             return "🔄 Reset successful.\n\n" + MENU_TEXT
 
-        # Move into agent mode
         session.stage = WhatsAppStage.AGENT
         return run_agent(intent, session.booking_state)
 
-    # --------------------------------------------------
-    # Safety fallback (should never happen)
-    # --------------------------------------------------
-    session.stage = WhatsAppStage.START
-    session.booking_state = None
-    return MENU_TEXT
+    # AGENT → free-form
+    if session.stage == WhatsAppStage.AGENT:
+        reply = run_agent(msg, session.booking_state)
+
+        if session.booking_state.is_done():
+            session.stage = WhatsAppStage.START
+            session.booking_state = None
+            return reply + "\n\n" + MENU_TEXT
+
+        return reply

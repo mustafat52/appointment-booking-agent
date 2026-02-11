@@ -130,31 +130,27 @@ def get_patient_by_phone(phone: str) -> Patient | None:
 # -------------------------
 
 def create_appointment(
-    db,
+    db: Session,
     *,
     doctor_id,
     patient_id,
-    appointment_date: date,
-    appointment_time: time,
-    status: str,
-    calendar_event_id: str | None,
-) -> Appointment:
-    db = get_db_session()
-    try:
-        appointment = Appointment(
-            doctor_id=doctor_id,
-            patient_id=patient_id,
-            appointment_date=appointment_date,
-            appointment_time=appointment_time,
-            status=status,
-            calendar_event_id=calendar_event_id,
-        )
-        db.add(appointment)
-        db.commit()
-        db.refresh(appointment)
-        return appointment
-    finally:
-        db.close()
+    appointment_date,
+    appointment_time,
+    status,
+    calendar_event_id,
+):
+    appointment = Appointment(
+        doctor_id=doctor_id,
+        patient_id=patient_id,
+        appointment_date=appointment_date,
+        appointment_time=appointment_time,
+        status=status,
+        calendar_event_id=calendar_event_id,
+    )
+    db.add(appointment)
+    db.flush()
+    return appointment
+
 
 
 def get_appointment_by_event_id(event_id: str) -> Appointment | None:
