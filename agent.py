@@ -16,8 +16,8 @@ from db.repository import reschedule_appointment_db
 
 # ===== PHASE 6.5 IMPORTS =====
 from db.repository import (
-    get_patient_by_phone,
-    get_active_appointments,
+    get_patients_by_phone,
+    get_active_appointments_by_phone,
     get_doctor_by_id
 )
 # =============================
@@ -300,15 +300,11 @@ def run_agent(user_message: str, state: BookingState) -> str:
             else:
                 return "Please tell me the phone number used while booking."
 
-        patient = get_patient_by_phone(state.patient_phone)
-        if not patient:
-            state.reset_flow()
-
-            return "I couldn’t find any appointments under this number."
+   
 
         if state.candidate_appointments is None:
-            appts = get_active_appointments(
-                patient_id=patient.patient_id,
+            appts = get_active_appointments_by_phone(
+                phone=state.patient_phone,
                 doctor_id=doctor_id,
             )
 
@@ -381,14 +377,10 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 if len(phone) != 10:
                     return "Please share the 10-digit number used for booking."
 
-                patient = get_patient_by_phone(phone)
-                
-                if not patient:
-                    state.reset_flow()
-                    return "❌ No patient found with this number."
 
-                appts = get_active_appointments(
-                    patient_id=patient.patient_id,
+
+                appts = get_active_appointments_by_phone(
+                    phone=phone,
                     doctor_id=doctor_id,
                 )
 
@@ -574,7 +566,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
             
 
             if not is_within_clinic_hours(t, doctor_id):
-                
+                doctor = get_doctor_by_id(doctor_id)
                 return (
                     "❌ The doctor is not available at that time.\n\n"
                     f"🕒 Clinic hours are "

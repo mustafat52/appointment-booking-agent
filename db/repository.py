@@ -116,13 +116,14 @@ def create_patient(
 
 
 # 🔹 NEW (Phase 6.5): fetch patient WITHOUT creating
-def get_patient_by_phone(phone: str) -> Patient | None:
+def get_patients_by_phone(phone: str) -> list[Patient]:
     db = get_db_session()
     try:
         stmt = select(Patient).where(Patient.phone == phone)
-        return db.execute(stmt).scalars().first()
+        return db.execute(stmt).scalars().all()
     finally:
         db.close()
+
 
 
 # -------------------------
@@ -206,25 +207,40 @@ def reschedule_appointment_db(
 
 
 # 🔹 NEW (Phase 6.5): get all ACTIVE appointments for patient
-def get_active_appointments(
+def get_active_appointments_by_phone(
     *,
-    patient_id,
+    phone,
     doctor_id,
 ) -> list[Appointment]:
+
     db = get_db_session()
     try:
+        # 1️⃣ get all patients with this phone
+        patients = db.execute(
+            select(Patient).where(Patient.phone == phone)
+        ).scalars().all()
+
+        if not patients:
+            return []
+
+        patient_ids = [p.patient_id for p in patients]
+
+        # 2️⃣ fetch appointments for all those IDs
         stmt = (
             select(Appointment)
             .where(
-                Appointment.patient_id == patient_id,
+                Appointment.patient_id.in_(patient_ids),
                 Appointment.doctor_id == doctor_id,
                 Appointment.status == "BOOKED",
             )
             .order_by(Appointment.appointment_date, Appointment.appointment_time)
         )
+
         return db.execute(stmt).scalars().all()
+
     finally:
         db.close()
+
 
 
 # 🔹 NEW (Phase 6.5): filter active appointments by date
