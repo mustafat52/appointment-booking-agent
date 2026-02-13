@@ -677,7 +677,12 @@ def reschedule_appointment_secure(
         )
 
     # 7️⃣ Working hour validation
-    doctor = get_doctor_by_id(doctor_id)
+    db = SessionLocal()
+    try:
+        doctor = get_doctor_by_id(db, doctor_id)
+    finally:
+        db.close()
+
     new_time = payload.new_time
 
     if not (doctor.work_start_time <= new_time < doctor.work_end_time):
