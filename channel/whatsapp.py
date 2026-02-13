@@ -3,7 +3,7 @@ from typing import Dict
 from agent import run_agent
 from state import BookingState
 from db.database import SessionLocal
-from db.repository import get_doctor_by_whatsapp_number
+from db.repository import get_doctor_by_whatsapp_number, get_doctor_by_id
 
 
 
@@ -62,29 +62,34 @@ def handle_whatsapp_message(*, from_number: str, to_number: str, message_body: s
 
     if session.stage == WhatsAppStage.START:
 
-    # Clean Twilio prefix
-        clean_to_number = to_number.replace("whatsapp:", "").strip()
+        # QR-based doctor routing
+        if message_body.startswith("START_"):
+            doctor_id = message_body.replace("START_", "").strip()
 
-        db = SessionLocal()
-        try:
-            doctor = get_doctor_by_whatsapp_number(db, clean_to_number)
-        finally:
-            db.close()
+            db = SessionLocal()
+            try:
+                doctor = get_doctor_by_id(db, doctor_id)
+            finally:
+                db.close()
 
-        if not doctor:
-            return "⚠️ This WhatsApp number is not registered with any clinic."
+            if not doctor:
+                return "⚠️ Invalid clinic link."
 
-        state = BookingState()
-        state.reset_flow()
-        state.doctor_id = doctor.doctor_id
-        state.doctor_name = doctor.name
-        state.greeted = False
+            state = BookingState()
+            state.reset_flow()
+            state.doctor_id = doctor.doctor_id
+            state.doctor_name = doctor.name
+            state.greeted = False
 
-        session.booking_state = state
-        session.stage = WhatsAppStage.MENU
+            session.booking_state = state
+            session.stage = WhatsAppStage.MENU
 
-        greeting = run_agent("", session.booking_state)
-        return greeting + "\n\n" + MENU_TEXT
+            greeting = run_agent("", session.booking_state)
+            return greeting + "\n\n" + MENU_TEXT
+
+        # If user messages without QR entry
+        return "⚠️ Please use your clinic's WhatsApp QR code to start booking."
+
 
 
     # MENU → numeric only

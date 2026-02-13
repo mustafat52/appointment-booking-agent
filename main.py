@@ -834,21 +834,18 @@ async def whatsapp_webhook(request: Request):
     )
 
 
-def generate_whatsapp_qr(whatsapp_number: str):
-    """
-    Generate wa.me link and QR code (base64).
-    """
+def generate_whatsapp_qr(platform_number: str, doctor_id: str):
+    clean_number = platform_number.replace("+", "").replace(" ", "")
 
-    # Remove + and spaces
-    clean_number = whatsapp_number.replace("+", "").replace(" ", "")
-
-    wa_link = f"https://wa.me/{clean_number}"
+    entry_text = f"START_{doctor_id}"
+    wa_link = f"https://wa.me/{clean_number}?text={entry_text}"
 
     qr = qrcode.QRCode(
         version=1,
         box_size=10,
         border=4,
     )
+
     qr.add_data(wa_link)
     qr.make(fit=True)
 
@@ -885,4 +882,9 @@ def get_doctor_whatsapp_qr(request: Request):
             detail="Doctor WhatsApp number not configured."
         )
 
-    return generate_whatsapp_qr(doctor.whatsapp_number)
+    PLATFORM_WHATSAPP_NUMBER = "+14155238886"
+
+    return generate_whatsapp_qr(
+    PLATFORM_WHATSAPP_NUMBER,
+    doctor.doctor_id
+)
