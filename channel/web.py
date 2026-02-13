@@ -54,11 +54,10 @@ def handle_web_message(
 
     try:
         reply = run_agent(user_message, state)
-    except Exception:
+    except Exception as e:
+        print("AGENT ERROR:", e)
         state.reset_flow()
-        reply = (
-            "⚠️ Something went wrong on our side.\n"
-            "Let's start fresh. How can I help you?"
-        )
+        reply = "⚠ Something went wrong on our side."
+
 
     return reply

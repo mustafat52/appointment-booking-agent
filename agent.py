@@ -12,7 +12,7 @@ from state import FlowStage
 from tools import cancel_appointment_by_id, update_calendar_event, is_within_clinic_hours
 from uuid import UUID
 from db.repository import reschedule_appointment_db
-
+from db.database import SessionLocal
 
 # ===== PHASE 6.5 IMPORTS =====
 from db.repository import (
@@ -441,7 +441,11 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 return "Please specify the new time."
             
             if not is_within_clinic_hours(t, doctor_id):
-                doctor = get_doctor_by_id(doctor_id)
+                db = SessionLocal()
+                try:
+                    doctor = get_doctor_by_id(db,doctor_id)
+                finally:
+                    db.close()   
                 return (
                     "❌ The doctor is not available at that time.\n\n"
                     f"🕒 Clinic hours are "
@@ -566,7 +570,11 @@ def run_agent(user_message: str, state: BookingState) -> str:
             
 
             if not is_within_clinic_hours(t, doctor_id):
-                doctor = get_doctor_by_id(doctor_id)
+                db = SessionLocal()
+                try:
+                    doctor = get_doctor_by_id(db,doctor_id)
+                finally:
+                    db.close() 
                 return (
                     "❌ The doctor is not available at that time.\n\n"
                     f"🕒 Clinic hours are "
