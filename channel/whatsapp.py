@@ -2,21 +2,11 @@ from enum import Enum
 from typing import Dict
 from agent import run_agent
 from state import BookingState
-
-# --------------------------------------------------
-# Temporary Phase-3 hardcoded doctor
-# --------------------------------------------------
-TEST_DOCTOR_ID = "078b91b2-c31e-46af-bf3c-e77cf3dae63c"
-TEST_DOCTOR_NAME = "Mustafa Taj"
+from db.database import SessionLocal
+from db.repository import get_doctor_by_whatsapp_number
 
 
-def init_booking_state() -> BookingState:
-    state = BookingState()
-    state.reset_flow()
-    state.doctor_id = TEST_DOCTOR_ID
-    state.doctor_name = TEST_DOCTOR_NAME
-    state.greeted = False
-    return state
+
 
 
 # --------------------------------------------------
@@ -62,19 +52,40 @@ MENU_MAP = {
 # --------------------------------------------------
 # Main WhatsApp handler
 # --------------------------------------------------
-def handle_whatsapp_message(*, from_number: str, message_body: str) -> str:
+def handle_whatsapp_message(*, from_number: str, to_number: str, message_body: str) -> str:
+
     if from_number not in whatsapp_state_store:
         whatsapp_state_store[from_number] = WhatsAppSession()
 
     session = whatsapp_state_store[from_number]
     msg = message_body.strip()
 
-    # START → greet + menu
     if session.stage == WhatsAppStage.START:
-        session.booking_state = init_booking_state()
+
+    # Clean Twilio prefix
+        clean_to_number = to_number.replace("whatsapp:", "").strip()
+
+        db = SessionLocal()
+        try:
+            doctor = get_doctor_by_whatsapp_number(db, clean_to_number)
+        finally:
+            db.close()
+
+        if not doctor:
+            return "⚠️ This WhatsApp number is not registered with any clinic."
+
+        state = BookingState()
+        state.reset_flow()
+        state.doctor_id = doctor.doctor_id
+        state.doctor_name = doctor.name
+        state.greeted = False
+
+        session.booking_state = state
         session.stage = WhatsAppStage.MENU
+
         greeting = run_agent("", session.booking_state)
         return greeting + "\n\n" + MENU_TEXT
+
 
     # MENU → numeric only
     if session.stage == WhatsAppStage.MENU:

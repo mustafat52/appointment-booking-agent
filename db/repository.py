@@ -459,3 +459,14 @@ def get_doctor_auth_by_doctor_id(doctor_id):
         )
     finally:
         db.close()
+
+
+def get_doctor_by_whatsapp_number(db: Session, whatsapp_number: str):
+    return (
+        db.query(Doctor)
+        .filter(
+            Doctor.whatsapp_number == whatsapp_number,
+            Doctor.is_active == True
+        )
+        .first()
+    )

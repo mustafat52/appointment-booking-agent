@@ -803,12 +803,15 @@ async def whatsapp_webhook(request: Request):
         payload = await request.form()
 
         from_number = payload.get("From")   # whatsapp:+91...
+        to_number = payload.get("To")       # whatsapp:+14155238886 (sandbox or prod number)
         body = payload.get("Body", "").strip()
 
         reply_text = handle_whatsapp_message(
             from_number=from_number,
+            to_number=to_number,
             message_body=body
         )
+
 
     except Exception as e:
         # Never let Twilio see a failure
