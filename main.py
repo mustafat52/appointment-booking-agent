@@ -675,7 +675,7 @@ def reschedule_appointment_secure(
             status_code=400,
             detail="Doctor is not available on the selected day"
         )
-
+#
     # 7️⃣ Working hour validation
     db = SessionLocal()
     try:
