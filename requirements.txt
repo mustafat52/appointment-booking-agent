@@ -70,3 +70,7 @@ python-jose==3.3.0
 twilio==8.12.0
 
 itsdangerous
+
+qrcode
+Pillow
+

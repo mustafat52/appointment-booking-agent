@@ -184,6 +184,24 @@
         gap: 1rem;
       }
     }
+        .password-wrapper {
+      position: relative;
+    }
+
+    .password-wrapper input {
+      width: 100%;
+      padding-right: 3rem;
+    }
+
+    .toggle-password {
+      position: absolute;
+      right: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      cursor: pointer;
+      font-size: 1.1rem;
+    }
+
   </style>
 </head>
 <body>
@@ -211,10 +229,14 @@
           <input type="email" id="email" placeholder="Enter your email" required />
         </div>
 
-        <div class="form-group">
-          <label for="password">Password</label>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <div class="password-wrapper">
           <input type="password" id="password" placeholder="Enter your password" required />
+          <span class="toggle-password" onclick="togglePassword()">👁</span>
         </div>
+      </div>
+
 
         <button type="submit" class="btn">Sign In</button>
       </form>
@@ -243,6 +265,44 @@
         document.getElementById("error").innerText = "Invalid email or password";
       }
     });
+
+    
+      document.getElementById("loginForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const email = document.getElementById("email").value;
+        const password = document.getElementById("password").value;
+
+        const res = await fetch("/auth/doctor/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ email, password })
+        });
+
+        if (res.ok) {
+          window.location.href = "/static/doc_dashboard.html";
+        } else {
+          document.getElementById("error").innerText = "Invalid email or password";
+        }
+      });
+
+      // 👇 ADD THIS FUNCTION
+    function togglePassword() {
+      const input = document.getElementById("password");
+      const icon = document.querySelector(".toggle-password");
+
+      if (input.type === "password") {
+        input.type = "text";
+        icon.textContent = "🙈";
+      } else {
+        input.type = "password";
+        icon.textContent = "👁";
+      }
+    }
+
+
+
   </script>
 
 </body>

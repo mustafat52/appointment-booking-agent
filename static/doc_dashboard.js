@@ -310,3 +310,60 @@ async function ensureLoggedIn() {
   });
 
 });
+
+
+// -----------------------------
+// WhatsApp QR Section
+// -----------------------------
+const showQrBtn = document.getElementById("showQrBtn");
+const qrSection = document.getElementById("qrSection");
+const waLinkEl = document.getElementById("waLink");
+const qrImageEl = document.getElementById("qrImage");
+const downloadQrBtn = document.getElementById("downloadQrBtn");
+
+if (showQrBtn) {
+  showQrBtn.addEventListener("click", async () => {
+
+    // If already visible → hide it
+    if (!qrSection.classList.contains("hidden")) {
+      qrSection.classList.add("hidden");
+      showQrBtn.textContent = "Show QR Code";
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/doctor/whatsapp-qr", {
+        credentials: "include"
+      });
+
+      if (!res.ok) {
+        showAlert("Failed to load WhatsApp QR", "error");
+        return;
+      }
+
+      const data = await res.json();
+
+      waLinkEl.href = data.wa_link;
+      waLinkEl.textContent = data.wa_link;
+
+      qrImageEl.src = `data:image/png;base64,${data.qr_base64}`;
+
+      qrSection.classList.remove("hidden");
+      showQrBtn.textContent = "Hide QR Code";
+
+    } catch (error) {
+      console.error("QR load error:", error);
+      showAlert("Failed to load WhatsApp QR", "error");
+    }
+  });
+}
+
+
+if (downloadQrBtn) {
+  downloadQrBtn.addEventListener("click", () => {
+    const link = document.createElement("a");
+    link.href = qrImageEl.src;
+    link.download = "whatsapp-qr.png";
+    link.click();
+  });
+}

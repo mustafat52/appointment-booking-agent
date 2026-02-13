@@ -439,6 +439,72 @@
         font-size: 0.85rem;
       }
     }
+
+        /* WhatsApp Section Styling */
+    .whatsapp-card {
+      padding: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .whatsapp-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .whatsapp-icon {
+      font-size: 1.8rem;
+    }
+
+    .whatsapp-title {
+      font-family: 'Sora', sans-serif;
+      font-size: 1.3rem;
+      margin: 0;
+    }
+
+    .whatsapp-subtext {
+      color: var(--text-gray);
+      margin: 0.2rem 0 0 0;
+      font-size: 0.95rem;
+    }
+
+    .qr-section {
+      margin-top: 1.8rem;
+      text-align: center;
+    }
+
+    .qr-section.hidden {
+      display: none;
+    }
+
+    .qr-link {
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+    }
+
+    .qr-link a {
+      display: block;
+      margin-top: 0.3rem;
+      color: var(--primary-green);
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .qr-link a:hover {
+      text-decoration: underline;
+    }
+
+    .qr-image {
+      max-width: 220px;
+      margin: 1rem auto;
+      display: block;
+    }
+    .qr-section {
+    transition: all 0.3s ease;
+    }
+
+
   </style>
 </head>
 <body>
@@ -491,6 +557,36 @@
 
     <div class="card">
       <div class="table-container">
+              <!-- WhatsApp Booking Section -->
+      <div class="card whatsapp-card">
+        <div class="whatsapp-header">
+          <div class="whatsapp-icon">📱</div>
+          <div>
+            <h3 class="whatsapp-title">WhatsApp Booking</h3>
+            <p class="whatsapp-subtext">
+              Allow patients to book appointments directly via WhatsApp.
+            </p>
+          </div>
+        </div>
+
+        <button id="showQrBtn" class="btn primary-btn">
+          Show QR Code
+        </button>
+
+        <div id="qrSection" class="qr-section hidden">
+          <div class="qr-link">
+            <span>Booking Link:</span>
+            <a id="waLink" href="#" target="_blank"></a>
+          </div>
+
+          <img id="qrImage" class="qr-image" />
+
+          <button id="downloadQrBtn" class="btn secondary-btn">
+            Download QR
+          </button>
+        </div>
+      </div>
+
         <table class="table">
           <thead>
             <tr>

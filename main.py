@@ -2,6 +2,10 @@ import os
 from pydoc import html
 import re
 import pytz
+import qrcode
+import io
+import base64
+
 from typing import Dict
 from datetime import time
 from datetime import datetime, timedelta
@@ -830,3 +834,55 @@ async def whatsapp_webhook(request: Request):
     )
 
 
+def generate_whatsapp_qr(whatsapp_number: str):
+    """
+    Generate wa.me link and QR code (base64).
+    """
+
+    # Remove + and spaces
+    clean_number = whatsapp_number.replace("+", "").replace(" ", "")
+
+    wa_link = f"https://wa.me/{clean_number}"
+
+    qr = qrcode.QRCode(
+        version=1,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(wa_link)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill="black", back_color="white")
+
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    img_base64 = base64.b64encode(buffer.getvalue()).decode()
+
+    return {
+        "wa_link": wa_link,
+        "qr_base64": img_base64
+    }
+
+
+
+@app.get("/api/doctor/whatsapp-qr")
+def get_doctor_whatsapp_qr(request: Request):
+    session_id = request.cookies.get("doctor_session")
+    doctor_id = doctor_sessions.get(session_id)
+
+    if not doctor_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    db = SessionLocal()
+    try:
+        doctor = get_doctor_by_id(db, doctor_id)
+    finally:
+        db.close()
+
+    if not doctor or not doctor.whatsapp_number:
+        raise HTTPException(
+            status_code=400,
+            detail="Doctor WhatsApp number not configured."
+        )
+
+    return generate_whatsapp_qr(doctor.whatsapp_number)
