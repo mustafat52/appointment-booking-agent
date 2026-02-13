@@ -770,7 +770,11 @@ def list_doctor_appointments(request: Request):
 @app.post("/auth/doctor/signup")
 def doctor_signup(payload: DoctorSignupRequest):
     # 1️⃣ Validate doctor exists
-    doctor = get_doctor_by_id(payload.doctor_id)
+    db = SessionLocal()
+    try:
+        doctor = get_doctor_by_id(db, payload.doctor_id)
+    finally:
+        db.close()
     if not doctor:
         raise HTTPException(
             status_code=400,
