@@ -471,7 +471,7 @@ def get_doctor_by_whatsapp_number(db: Session, whatsapp_number: str):
         .first()
     )
 
-from models import PatientDoctorLink
+from db.models import PatientDoctorLink
 
 
 
