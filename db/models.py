@@ -133,3 +133,23 @@ class DoctorAuth(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login_at = Column(DateTime, nullable=True)
+
+
+
+
+class PatientDoctorLink(Base):
+    __tablename__ = "patient_doctor_links"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    phone_number = Column(String, nullable=False, unique=True)
+
+    doctor_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("doctors.doctor_id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    created_at = Column(TIMESTAMP, server_default=func.now())
+
+    doctor = relationship("Doctor")

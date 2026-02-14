@@ -775,6 +775,7 @@ def doctor_signup(payload: DoctorSignupRequest):
         doctor = get_doctor_by_id(db, payload.doctor_id)
     finally:
         db.close()
+        
     if not doctor:
         raise HTTPException(
             status_code=400,

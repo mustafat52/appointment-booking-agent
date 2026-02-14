@@ -3,7 +3,7 @@ from typing import Dict
 from agent import run_agent
 from state import BookingState
 from db.database import SessionLocal
-from db.repository import get_doctor_by_whatsapp_number, get_doctor_by_id
+from db.repository import get_doctor_by_whatsapp_number, get_doctor_by_id,upsert_patient_doctor_link,get_doctor_id_by_phone
 
 
 
@@ -54,6 +54,10 @@ MENU_MAP = {
 # --------------------------------------------------
 def handle_whatsapp_message(*, from_number: str, to_number: str, message_body: str) -> str:
 
+    # Clean Twilio prefix
+    if from_number:
+        from_number = from_number.replace("whatsapp:", "").strip()
+
     if from_number not in whatsapp_state_store:
         whatsapp_state_store[from_number] = WhatsAppSession()
 
@@ -74,6 +78,9 @@ def handle_whatsapp_message(*, from_number: str, to_number: str, message_body: s
 
             if not doctor:
                 return "⚠️ Invalid clinic link."
+            
+            upsert_patient_doctor_link(from_number, doctor.doctor_id)
+
 
             state = BookingState()
             state.reset_flow()
@@ -86,6 +93,32 @@ def handle_whatsapp_message(*, from_number: str, to_number: str, message_body: s
 
             greeting = run_agent("", session.booking_state)
             return greeting + "\n\n" + MENU_TEXT
+        
+        
+        # 🔵 NEW: Auto-attach using persistent mapping
+        doctor_id = get_doctor_id_by_phone(from_number)
+
+        if doctor_id:
+            db = SessionLocal()
+            try:
+                doctor = get_doctor_by_id(db, doctor_id)
+            finally:
+                db.close()
+
+            if doctor:
+                state = BookingState()
+                state.reset_flow()
+                state.doctor_id = doctor.doctor_id
+                state.doctor_name = doctor.name
+                state.greeted = False
+
+                session.booking_state = state
+                session.stage = WhatsAppStage.MENU
+
+                greeting = run_agent("", session.booking_state)
+                return greeting + "\n\n" + MENU_TEXT
+
+
 
         # If user messages without QR entry
         return "⚠️ Please use your clinic's WhatsApp QR code to start booking."

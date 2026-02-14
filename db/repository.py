@@ -470,3 +470,42 @@ def get_doctor_by_whatsapp_number(db: Session, whatsapp_number: str):
         )
         .first()
     )
+
+from models import PatientDoctorLink
+
+
+
+def get_doctor_id_by_phone(phone_number: str):
+    db = SessionLocal()
+    try:
+        link = db.query(PatientDoctorLink).filter(
+            PatientDoctorLink.phone_number == phone_number
+        ).first()
+
+        if link:
+            return link.doctor_id
+
+        return None
+    finally:
+        db.close()
+
+
+def upsert_patient_doctor_link(phone_number: str, doctor_id):
+    db = SessionLocal()
+    try:
+        existing = db.query(PatientDoctorLink).filter(
+            PatientDoctorLink.phone_number == phone_number
+        ).first()
+
+        if existing:
+            existing.doctor_id = doctor_id
+        else:
+            new_link = PatientDoctorLink(
+                phone_number=phone_number,
+                doctor_id=doctor_id
+            )
+            db.add(new_link)
+
+        db.commit()
+    finally:
+        db.close()
