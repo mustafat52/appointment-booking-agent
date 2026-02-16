@@ -803,40 +803,30 @@ def doctor_signup(payload: DoctorSignupRequest):
     return {"status": "account_created"}
 
 
-from fastapi.responses import Response
-from twilio.twiml.messaging_response import MessagingResponse
+from fastapi import BackgroundTasks
 
 @app.post("/whatsapp/webhook")
-async def whatsapp_webhook(request: Request):
+async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     try:
         payload = await request.form()
 
-        from_number = payload.get("From")   # whatsapp:+91...
-        to_number = payload.get("To")       # whatsapp:+14155238886 (sandbox or prod number)
+        from_number = payload.get("From")
+        to_number = payload.get("To")
         body = payload.get("Body", "").strip()
 
-        reply_text = handle_whatsapp_message(
-            from_number=from_number,
-            to_number=to_number,
-            message_body=body
+        # 🔥 Add background task (do not process inline)
+        background_tasks.add_task(
+            process_whatsapp_message,
+            from_number,
+            to_number,
+            body
         )
-
 
     except Exception as e:
-        # Never let Twilio see a failure
         print("❌ WhatsApp webhook error:", str(e))
-        reply_text = (
-            "⚠️ Sorry, something went wrong.\n"
-            "Please type 0 to restart."
-        )
 
-    twiml = MessagingResponse()
-    twiml.message(reply_text)
-
-    return Response(
-        content=str(twiml),
-        media_type="application/xml"
-    )
+    # 🚀 Immediate ACK (critical)
+    return Response(status_code=200)
 
 
 def generate_whatsapp_qr(platform_number: str, doctor_id: str):
@@ -893,3 +883,53 @@ def get_doctor_whatsapp_qr(request: Request):
     PLATFORM_WHATSAPP_NUMBER,
     doctor.doctor_id
 )
+
+
+import os
+from twilio.rest import Client
+
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")
+
+twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+
+@app.get("/test-whatsapp")
+def test_whatsapp():
+    try:
+        message = twilio_client.messages.create(
+            body="✅ REST WhatsApp test successful!",
+            from_=TWILIO_WHATSAPP_NUMBER,
+            to="whatsapp:+919550253852"
+        )
+        return {"status": "sent", "sid": message.sid}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def process_whatsapp_message(from_number, to_number, body):
+    try:
+        reply_text = handle_whatsapp_message(
+            from_number=from_number,
+            to_number=to_number,
+            message_body=body
+        )
+
+        twilio_client.messages.create(
+            body=reply_text,
+            from_=TWILIO_WHATSAPP_NUMBER,
+            to=from_number,
+        )
+
+    except Exception as e:
+        print("❌ WhatsApp processing failed:", str(e))
+
+        try:
+            twilio_client.messages.create(
+                body="⚠️ Sorry, something went wrong.\nPlease type 0 to restart.",
+                from_=TWILIO_WHATSAPP_NUMBER,
+                to=from_number,
+            )
+        except:
+            pass
