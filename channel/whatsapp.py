@@ -4,7 +4,8 @@ from agent import run_agent
 from state import BookingState
 from db.database import SessionLocal
 from db.repository import get_doctor_by_whatsapp_number, get_doctor_by_id,upsert_patient_doctor_link,get_doctor_id_by_phone
-
+from datetime import datetime
+import pytz
 
 
 
@@ -54,6 +55,15 @@ MENU_MAP = {
 # --------------------------------------------------
 def handle_whatsapp_message(*, from_number: str, to_number: str, message_body: str) -> str:
 
+    IST = pytz.timezone("Asia/Kolkata")
+    now = datetime.now(IST).time()
+
+    if not (now >= datetime.strptime("09:00", "%H:%M").time() and 
+            now <= datetime.strptime("22:00", "%H:%M").time()):
+        return (
+            "⏰ Our booking system operates between 9:00 AM and 10:00 PM.\n"
+            "Please message during these hours."
+        )
     # Clean Twilio prefix
     if from_number:
         from_number = from_number.replace("whatsapp:", "").strip()

@@ -3,6 +3,8 @@
 import re
 from datetime import datetime, timedelta
 
+import pytz
+
 from extractor import extract_entities
 from state import BookingState
 import state
@@ -279,6 +281,28 @@ def run_agent(user_message: str, state: BookingState) -> str:
         if state.stage == FlowStage.CANCEL_CONFIRM:
             if msg not in CONTROL_WORDS:
                 return "Please confirm cancellation. (yes / no)"
+            
+
+            IST = pytz.timezone("Asia/Kolkata")
+            now = datetime.now(IST)
+
+            selected_appt = next(
+                a for a in state.candidate_appointments
+                if a.appointment_id == state.selected_appointment_id
+            )
+
+            appt_datetime = datetime.combine(
+                selected_appt.appointment_date,
+                selected_appt.appointment_time
+            )
+            appt_datetime = IST.localize(appt_datetime)
+
+            if appt_datetime - now < timedelta(hours=24):
+                state.reset_flow()
+                return (
+                    "⚠️ Online cancellation is not allowed within 24 hours of the appointment.\n\n"
+                    "Please contact the clinic directly to cancel."
+                )
 
             try:
                 cancel_appointment_by_id(state.selected_appointment_id,doctor_id)
@@ -495,6 +519,23 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 if a.appointment_id == state.selected_appointment_id
             )
 
+                        
+            IST = pytz.timezone("Asia/Kolkata")
+            now = datetime.now(IST)
+
+            appt_datetime = datetime.combine(
+                selected_appt.appointment_date,
+                selected_appt.appointment_time
+            )
+            appt_datetime = IST.localize(appt_datetime)
+
+            if appt_datetime - now < timedelta(hours=24):
+                state.reset_flow()
+                return (
+                    "⚠️ Online rescheduling is not allowed within 24 hours of the appointment.\n\n"
+                    "Please contact the clinic directly to reschedule."
+    )
+
             existing_event_id = selected_appt.calendar_event_id
 
 
@@ -546,8 +587,21 @@ def run_agent(user_message: str, state: BookingState) -> str:
         if state.stage == FlowStage.BOOK_DATE:
             parsed = normalize_date(msg)
 
+            IST = pytz.timezone("Asia/Kolkata")
+            today = datetime.now(IST).date()
+
             if not parsed:
                 return "What date would you like to book?"
+            
+            parsed_date = datetime.strptime(parsed, "%Y-%m-%d").date()
+
+            # ❌ No past dates
+            if parsed_date < today:
+                return "❌ You cannot book for a past date. Please choose a valid date."
+
+            # ❌ More than 7 days ahead
+            if parsed_date > today + timedelta(days=7):
+                return "📅 Appointments can only be booked up to 7 days in advance."
 
             if not is_working_day(parsed, doctor_id):
                 return "❌ Doctor is not available on that day. Please choose another date."
