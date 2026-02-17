@@ -277,46 +277,32 @@ def run_agent(user_message: str, state: BookingState) -> str:
     # CANCEL
     # ---------------------------
     if state.intent == "CANCEL":
-        
+
+        # ----------------------------
+        # STEP 1: CONFIRM CANCELLATION
+        # ----------------------------
         if state.stage == FlowStage.CANCEL_CONFIRM:
             if msg not in CONTROL_WORDS:
                 return "Please confirm cancellation. (yes / no)"
-            
-
-            IST = pytz.timezone("Asia/Kolkata")
-            now = datetime.now(IST)
-
-            selected_appt = next(
-                a for a in state.candidate_appointments
-                if a.appointment_id == state.selected_appointment_id
-            )
-
-            appt_datetime = datetime.combine(
-                selected_appt.appointment_date,
-                selected_appt.appointment_time
-            )
-            appt_datetime = IST.localize(appt_datetime)
-
-            if appt_datetime - now < timedelta(hours=24):
-                state.reset_flow()
-                return (
-                    "⚠️ Online cancellation is not allowed within 24 hours of the appointment.\n\n"
-                    "Please contact the clinic directly to cancel."
-                )
 
             try:
-                cancel_appointment_by_id(state.selected_appointment_id,doctor_id)
+                cancel_appointment_by_id(
+                    state.selected_appointment_id,
+                    doctor_id
+                )
             except Exception:
                 state.reset_flow()
                 return (
-                "⚠️ I couldn’t cancel the appointment right now.\n"
-                "Please try again in a moment."
-            )
+                    "⚠️ I couldn’t cancel the appointment right now.\n"
+                    "Please try again in a moment."
+                )
 
             state.reset_flow()
             return "✅ Your appointment has been cancelled."
-        # ===== PHASE 6.5 DB FALLBACK (CANCEL) =====
-        
+
+        # -----------------------------------
+        # STEP 2: GET PATIENT PHONE (DB MODE)
+        # -----------------------------------
         if not state.patient_phone:
             digits = re.sub(r"\D", "", msg)
             if len(digits) == 10:
@@ -324,8 +310,9 @@ def run_agent(user_message: str, state: BookingState) -> str:
             else:
                 return "Please tell me the phone number used while booking."
 
-   
-
+        # -----------------------------------
+        # STEP 3: FETCH ACTIVE APPOINTMENTS
+        # -----------------------------------
         if state.candidate_appointments is None:
             appts = get_active_appointments_by_phone(
                 phone=state.patient_phone,
@@ -334,21 +321,49 @@ def run_agent(user_message: str, state: BookingState) -> str:
 
             if not appts:
                 state.reset_flow()
-
                 return "You don’t have any active appointments."
 
             state.candidate_appointments = appts
 
             if len(appts) == 1:
-                state.selected_appointment_id = appts[0].appointment_id
-                state.stage = FlowStage.CANCEL_CONFIRM
-                return (
-                        f"You have one appointment on "
-                        f"{appts[0].appointment_date} at "
-                        f"{appts[0].appointment_time.strftime('%H:%M')}.\n"
-                        "Do you want to cancel it? (yes / no)"
+                chosen = appts[0]
+
+                # 🔒 24-HOUR CUTOFF CHECK (EARLY BLOCK)
+                IST = pytz.timezone("Asia/Kolkata")
+                now = datetime.now(IST)
+
+                appt_datetime = datetime.combine(
+                    chosen.appointment_date,
+                    chosen.appointment_time
+                )
+                appt_datetime = IST.localize(appt_datetime)
+
+                if appt_datetime - now < timedelta(hours=24):
+
+                    # 🔥 FETCH CLINIC NUMBER
+                    db = SessionLocal()
+                    try:
+                        doctor = get_doctor_by_id(db, doctor_id)
+                    finally:
+                        db.close()
+
+                    clinic_phone = doctor.whatsapp_number or "the clinic"
+
+                    state.reset_flow()
+                    return (
+                        "⚠️ Online cancellation is not allowed within 24 hours of the appointment.\n\n"
+                        f"📞 Please contact the clinic directly at {clinic_phone}."
                     )
-                
+
+                state.selected_appointment_id = chosen.appointment_id
+                state.stage = FlowStage.CANCEL_CONFIRM
+
+                return (
+                    f"You have one appointment on "
+                    f"{chosen.appointment_date} at "
+                    f"{chosen.appointment_time.strftime('%H:%M')}.\n"
+                    "Do you want to cancel it? (yes / no)"
+                )
 
             else:
                 lines = ["Here are your active appointments:"]
@@ -359,6 +374,9 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 lines.append("Please tell me which one you want to cancel.")
                 return "\n".join(lines)
 
+        # -----------------------------------
+        # STEP 4: USER SELECTS APPOINTMENT
+        # -----------------------------------
         if not state.selected_appointment_id:
             m = re.search(r"\b(\d+)\b", msg)
             if not m:
@@ -369,6 +387,34 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 return "Please choose a valid option number."
 
             chosen = state.candidate_appointments[idx]
+
+            # 🔒 24-HOUR CUTOFF CHECK (EARLY BLOCK)
+            IST = pytz.timezone("Asia/Kolkata")
+            now = datetime.now(IST)
+
+            appt_datetime = datetime.combine(
+                chosen.appointment_date,
+                chosen.appointment_time
+            )
+            appt_datetime = IST.localize(appt_datetime)
+
+            if appt_datetime - now < timedelta(hours=24):
+
+                # 🔥 FETCH CLINIC NUMBER
+                db = SessionLocal()
+                try:
+                    doctor = get_doctor_by_id(db, doctor_id)
+                finally:
+                    db.close()
+
+                clinic_phone = doctor.whatsapp_number or "the clinic"
+
+                state.reset_flow()
+                return (
+                    "⚠️ Online cancellation is not allowed within 24 hours of the appointment.\n\n"
+                    f"📞 Please contact the clinic directly at {clinic_phone}."
+                )
+
             state.selected_appointment_id = chosen.appointment_id
             state.stage = FlowStage.CANCEL_CONFIRM
 
@@ -379,13 +425,9 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 "Do you want to cancel it? (yes / no)"
             )
 
-            
-
-        # ===== END PHASE 6.5 DB FALLBACK =====
 
        
   
-    
     # ---------------------------
     # RESCHEDULE (STATE-DRIVEN)
     # ---------------------------
@@ -401,13 +443,10 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 if len(phone) != 10:
                     return "Please share the 10-digit number used for booking."
 
-
-
                 appts = get_active_appointments_by_phone(
                     phone=phone,
                     doctor_id=doctor_id,
                 )
-
 
                 if not appts:
                     state.reset_flow()
@@ -416,12 +455,41 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 state.candidate_appointments = appts
 
                 if len(appts) == 1:
-                    state.selected_appointment_id = appts[0].appointment_id
+                    chosen = appts[0]
+
+                    # 🔒 24-HOUR EARLY BLOCK
+                    IST = pytz.timezone("Asia/Kolkata")
+                    now = datetime.now(IST)
+
+                    appt_datetime = datetime.combine(
+                        chosen.appointment_date,
+                        chosen.appointment_time
+                    )
+                    appt_datetime = IST.localize(appt_datetime)
+
+                    if appt_datetime - now < timedelta(hours=24):
+
+                        # 🔥 FETCH CLINIC NUMBER
+                        db = SessionLocal()
+                        try:
+                            doctor = get_doctor_by_id(db, doctor_id)
+                        finally:
+                            db.close()
+
+                        clinic_phone = doctor.whatsapp_number or "the clinic"
+
+                        state.reset_flow()
+                        return (
+                            "⚠️ Online rescheduling is not allowed within 24 hours of the appointment.\n\n"
+                            f"📞 Please contact the clinic directly at {clinic_phone}."
+                        )
+
+                    state.selected_appointment_id = chosen.appointment_id
                     state.stage = FlowStage.RESCHEDULE_DATE
                     return "What new date would you like?"
 
                 options = "\n".join(
-                    f"{i+1}. {a.appointment_date} at {a.appointment_time}"
+                    f"{i+1}. {a.appointment_date} at {a.appointment_time.strftime('%H:%M')}"
                     for i, a in enumerate(appts)
                 )
                 return f"Which appointment would you like to reschedule?\n{options}"
@@ -430,9 +498,38 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 try:
                     idx = int(msg.strip()) - 1
                     chosen = state.candidate_appointments[idx]
+
+                    # 🔒 24-HOUR EARLY BLOCK
+                    IST = pytz.timezone("Asia/Kolkata")
+                    now = datetime.now(IST)
+
+                    appt_datetime = datetime.combine(
+                        chosen.appointment_date,
+                        chosen.appointment_time
+                    )
+                    appt_datetime = IST.localize(appt_datetime)
+
+                    if appt_datetime - now < timedelta(hours=24):
+
+                        # 🔥 FETCH CLINIC NUMBER
+                        db = SessionLocal()
+                        try:
+                            doctor = get_doctor_by_id(db, doctor_id)
+                        finally:
+                            db.close()
+
+                        clinic_phone = doctor.whatsapp_number or "the clinic"
+
+                        state.reset_flow()
+                        return (
+                            "⚠️ Online rescheduling is not allowed within 24 hours of the appointment.\n\n"
+                            f"📞 Please contact the clinic directly at {clinic_phone}."
+                        )
+
                     state.selected_appointment_id = chosen.appointment_id
                     state.stage = FlowStage.RESCHEDULE_DATE
                     return "What new date would you like?"
+
                 except Exception:
                     return "Please reply with the number of the appointment."
 
@@ -463,13 +560,13 @@ def run_agent(user_message: str, state: BookingState) -> str:
 
             if not t:
                 return "Please specify the new time."
-            
+
             if not is_within_clinic_hours(t, doctor_id):
                 db = SessionLocal()
                 try:
-                    doctor = get_doctor_by_id(db,doctor_id)
+                    doctor = get_doctor_by_id(db, doctor_id)
                 finally:
-                    db.close()   
+                    db.close()
                 return (
                     "❌ The doctor is not available at that time.\n\n"
                     f"🕒 Clinic hours are "
@@ -477,20 +574,16 @@ def run_agent(user_message: str, state: BookingState) -> str:
                     f"{doctor.work_end_time.strftime('%H:%M')}."
                 )
 
-
             if not check_availability(
                 state.reschedule_date,
                 t,
                 doctor_id,
                 exclude_appointment_id=state.selected_appointment_id,
-                ):
-    
-
+            ):
                 return "❌ That time is not available. Please choose another time."
 
             state.reschedule_time = t
             state.stage = FlowStage.RESCHEDULE_CONFIRM
-
 
         # ------------------
         # STEP 4: CONFIRM
@@ -503,7 +596,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
                     "1️⃣ Date\n"
                     "2️⃣ Time\n"
                     "Or say *start over*"
-                    )
+                )
 
             if msg not in CONTROL_WORDS:
                 return (
@@ -512,66 +605,43 @@ def run_agent(user_message: str, state: BookingState) -> str:
                     f"⏰ {state.reschedule_time}\n"
                     f"(yes / no)"
                 )
-            
 
             selected_appt = next(
                 a for a in state.candidate_appointments
                 if a.appointment_id == state.selected_appointment_id
             )
 
-                        
-            IST = pytz.timezone("Asia/Kolkata")
-            now = datetime.now(IST)
-
-            appt_datetime = datetime.combine(
-                selected_appt.appointment_date,
-                selected_appt.appointment_time
-            )
-            appt_datetime = IST.localize(appt_datetime)
-
-            if appt_datetime - now < timedelta(hours=24):
-                state.reset_flow()
-                return (
-                    "⚠️ Online rescheduling is not allowed within 24 hours of the appointment.\n\n"
-                    "Please contact the clinic directly to reschedule."
-    )
-
             existing_event_id = selected_appt.calendar_event_id
 
-
-            if not selected_appt.calendar_event_id:
+            if not existing_event_id:
                 state.reset_flow()
                 return (
                     "⚠️ This appointment cannot be rescheduled because "
                     "it is not linked to a calendar event."
                 )
 
-
             try:
                 update_calendar_event(
-            doctor_id=doctor_id,
-            event_id=existing_event_id,
-            new_date=state.reschedule_date,
-            new_time=state.reschedule_time,
-        )
+                    doctor_id=doctor_id,
+                    event_id=existing_event_id,
+                    new_date=state.reschedule_date,
+                    new_time=state.reschedule_time,
+                )
             except Exception:
                 state.reset_flow()
                 return (
                     "⚠️ The appointment was updated, but we couldn’t update the calendar right now.\n"
                     "The clinic has been notified."
                 )
-            
+
             reschedule_appointment_db(
                 appointment_id=state.selected_appointment_id,
                 new_date=state.reschedule_date,
                 new_time=state.reschedule_time,
                 new_calendar_event_id=existing_event_id,
-                )
-
-            
+            )
 
             state.reset_flow()
-
             return "✅ Appointment rescheduled successfully."
 
     # BOOK
