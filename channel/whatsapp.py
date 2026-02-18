@@ -74,6 +74,17 @@ def handle_whatsapp_message(*, from_number: str, to_number: str, message_body: s
     session = whatsapp_state_store[from_number]
     msg = message_body.strip()
 
+    if msg.lower() in ["menu", "start", "options"]:
+        session.stage = WhatsAppStage.MENU
+        return (
+            "How can I assist you today?\n\n"
+            "1️⃣ Book an appointment\n"
+            "2️⃣ Cancel an appointment\n"
+            "3️⃣ Reschedule an appointment\n\n"
+            "Reply with 1, 2 or 3."
+        )
+
+
     if session.stage == WhatsAppStage.START:
 
         # QR-based doctor routing
@@ -138,7 +149,10 @@ def handle_whatsapp_message(*, from_number: str, to_number: str, message_body: s
     # MENU → numeric only
     if session.stage == WhatsAppStage.MENU:
         if msg not in MENU_MAP:
-            return "❌ Invalid option.\n\n" + MENU_TEXT
+            return (
+                "I couldn’t understand that selection.\n"
+                "Please reply with one of the numbers shown above."
+            ) 
 
         intent = MENU_MAP[msg]
 
@@ -157,6 +171,6 @@ def handle_whatsapp_message(*, from_number: str, to_number: str, message_body: s
         if session.booking_state.is_done():
             session.stage = WhatsAppStage.START
             session.booking_state = None
-            return reply + "\n\n" + MENU_TEXT
+            return reply 
 
         return reply

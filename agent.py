@@ -41,31 +41,62 @@ RESET_KEYWORDS = {
 # ---------------------------
 
 
-
 def normalize_time(text: str):
     if not text:
         return None, False
 
-    t = text.lower()
-    m = re.search(r"\b(\d{1,2})\s*(am|pm)?\b", t)
+    import re
+
+    t = text.lower().strip()
+
+    # --- Preprocessing ---
+    t = t.replace(",", ":")
+    t = t.replace(".", ":")
+
+    # Convert formats like 1130 or 945 into 11:30 / 9:45
+    if re.fullmatch(r"\d{3,4}", t):
+        if len(t) == 3:   # e.g., 945 → 9:45
+            t = f"{t[0]}:{t[1:]}"
+        elif len(t) == 4: # e.g., 1130 → 11:30
+            t = f"{t[:2]}:{t[2:]}"
+
+    # Match HH or HH:MM with optional am/pm
+    m = re.search(r"\b(\d{1,2})(?::(\d{1,2}))?\s*(am|pm)?\b", t)
 
     if not m:
         return None, True
 
     hour = int(m.group(1))
-    meridiem = m.group(2)
+    minute = int(m.group(2)) if m.group(2) else 0
+    meridiem = m.group(3)
 
+    # Validate minute
+    if minute < 0 or minute > 59:
+        return None, True
+
+    # --- Handle meridiem ---
     if meridiem == "pm" or "afternoon" in t or "evening" in t:
         if hour < 12:
             hour += 12
-        return f"{hour:02d}:00", False
 
-    if meridiem == "am" or "morning" in t:
+    elif meridiem == "am" or "morning" in t:
         if hour == 12:
             hour = 0
-        return f"{hour:02d}:00", False
 
-    return None, True
+    else:
+        # No AM/PM specified
+        # Assume:
+        # 1–6 → PM
+        # 7–11 → AM
+        if 1 <= hour <= 6:
+            hour += 12
+
+    # Validate hour after adjustment
+    if hour < 0 or hour > 23:
+        return None, True
+
+    return f"{hour:02d}:{minute:02d}", False
+
 
 
 def normalize_date(text: str):
@@ -283,7 +314,10 @@ def run_agent(user_message: str, state: BookingState) -> str:
         # ----------------------------
         if state.stage == FlowStage.CANCEL_CONFIRM:
             if msg not in CONTROL_WORDS:
-                return "Please confirm cancellation. (yes / no)"
+                return (
+                "Please confirm:\n"
+                "Reply *yes* to proceed or *no* to go back."
+            )
 
             try:
                 cancel_appointment_by_id(
@@ -531,7 +565,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
                     return "What new date would you like?"
 
                 except Exception:
-                    return "Please reply with the number of the appointment."
+                    return "Please reply with the number corresponding to the appointment above."
 
         # ------------------
         # STEP 2: NEW DATE
@@ -540,14 +574,19 @@ def run_agent(user_message: str, state: BookingState) -> str:
             parsed = normalize_date(msg)
 
             if not parsed:
-                return "Please provide the new date."
+                return "Sure 🙂 What date would you like to reschedule to?"
+
 
             if not is_working_day(parsed, doctor_id):
-                return "❌ Doctor is not available on that day. Please choose another date."
+                return (
+                "❌ The doctor is not available on that date.\n"
+                "Please choose another day."
+            )
 
             state.reschedule_date = parsed
             state.stage = FlowStage.RESCHEDULE_TIME
-            return "What new time would you prefer?"
+            return "And what time works best for you?"
+
 
         # ------------------
         # STEP 3: NEW TIME
@@ -556,10 +595,13 @@ def run_agent(user_message: str, state: BookingState) -> str:
             t, needs_clarification = normalize_time(extracted["time_text"] or msg)
 
             if needs_clarification:
-                return "Please specify the exact time (e.g., 3pm)."
+                return (
+                "I didn’t catch the time clearly.\n"
+                "Please reply like: 3pm or 3:30pm."
+            )
 
             if not t:
-                return "Please specify the new time."
+                return "Could you please tell me the preferred time?"
 
             if not is_within_clinic_hours(t, doctor_id):
                 db = SessionLocal()
@@ -580,7 +622,10 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 doctor_id,
                 exclude_appointment_id=state.selected_appointment_id,
             ):
-                return "❌ That time is not available. Please choose another time."
+                return (
+                "❌ That time slot is not available.\n"
+                "Please choose a different time."
+            )
 
             state.reschedule_time = t
             state.stage = FlowStage.RESCHEDULE_CONFIRM
@@ -674,7 +719,10 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 return "📅 Appointments can only be booked up to 7 days in advance."
 
             if not is_working_day(parsed, doctor_id):
-                return "❌ Doctor is not available on that day. Please choose another date."
+                return (
+                "❌ The doctor is not available on that date.\n"
+                "Please choose another day."
+            )
 
             state.date = parsed
             state.stage = FlowStage.BOOK_TIME
@@ -708,7 +756,10 @@ def run_agent(user_message: str, state: BookingState) -> str:
 
 
             if not check_availability(state.date, t, doctor_id):
-                return "❌ That time is not available. Please choose another time."
+                return (
+                "❌ That time slot is not available.\n"
+                "Please choose a different time."
+            )
 
             state.time = t
             state.stage = FlowStage.BOOK_CONFIRM
