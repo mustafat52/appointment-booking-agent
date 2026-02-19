@@ -971,7 +971,7 @@ def process_whatsapp_message(from_number, to_number, body):
 
         twilio_client.messages.create(
             body=reply_text,
-            from_=TWILIO_WHATSAPP_NUMBER,
+            from_=f"whatsapp:{TWILIO_WHATSAPP_NUMBER}",
             to=from_number,
         )
 
