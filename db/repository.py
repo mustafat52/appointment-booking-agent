@@ -183,7 +183,7 @@ def cancel_appointment_db(appointment_id) -> None:
         # 🔔 Doctor Notification (Cancel)
         try:
             notify_doctor_via_whatsapp(
-                doctor_id=appt.doctor_id,
+                doctor=appt.doctor,
                 message=(
                     f"❌ Appointment Cancelled\n\n"
                     f"Patient: {appt.patient_name}\n"
@@ -229,7 +229,7 @@ def reschedule_appointment_db(
         # 🔔 Doctor Notification (Reschedule)
         try:
             notify_doctor_via_whatsapp(
-                doctor_id=appt.doctor_id,
+                doctor=appt.doctor,
                 message=(
                     f"🔁 Appointment Rescheduled\n\n"
                     f"Patient: {appt.patient_name}\n"

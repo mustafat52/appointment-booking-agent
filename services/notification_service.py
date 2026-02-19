@@ -15,7 +15,7 @@ client = Client(TWILIO_SID, TWILIO_TOKEN)
 
 def notify_doctor_via_whatsapp(
     *,
-    doctor_id,
+    doctor,
     message: str
 ):
     """
@@ -24,23 +24,16 @@ def notify_doctor_via_whatsapp(
     - doctor_whatsapp_number exists
     """
 
-    db = SessionLocal()
     try:
-        doctor = get_doctor_by_id(db, doctor_id)
-
-        if not doctor:
-            logger.warning("Doctor not found for notification")
-            return
-
         if not doctor.notifications_enabled:
             logger.info(
-                f"Notification skipped (trial mode) for doctor {doctor_id}"
+                f"Notification skipped (trial mode) for doctor {doctor.doctor_id}"
             )
             return
 
         if not doctor.doctor_whatsapp_number:
             logger.warning(
-                f"Doctor {doctor_id} has no WhatsApp number"
+                f"Doctor {doctor.doctor_id} has no WhatsApp number"
             )
             return
 
@@ -51,12 +44,10 @@ def notify_doctor_via_whatsapp(
         )
 
         logger.info(
-            f"Doctor notification sent | doctor_id={doctor_id}"
+            f"Doctor notification sent | doctor_id={doctor.doctor_id}"
         )
 
     except Exception as e:
         logger.exception(
-            f"Doctor notification failed | doctor_id={doctor_id} | {str(e)}"
+            f"Doctor notification failed | doctor_id={doctor.doctor_id} | {str(e)}"
         )
-    finally:
-        db.close()

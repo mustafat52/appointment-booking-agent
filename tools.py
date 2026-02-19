@@ -279,7 +279,7 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
         # 🔔 Doctor Notification (Safe, Non-Blocking)
         try:
             notify_doctor_via_whatsapp(
-                doctor_id=doctor_id,
+                doctor=appt.doctor,
                 message=(
                     f"📅 New Appointment Booked\n\n"
                     f"Patient: {patient_name}\n"
