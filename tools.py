@@ -237,7 +237,7 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
             "reminders": {
                 "useDefault": False,
                 "overrides": [
-                    {"method": "popup", "minutes": 30},
+                    {"method": "popup", "minutes": 0},
                     {"method": "email", "minutes": 120},
                 ],
             },
