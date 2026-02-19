@@ -11,6 +11,7 @@ TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")
 
 client = Client(TWILIO_SID, TWILIO_TOKEN)
 
+# -------------------------
 
 def notify_doctor_via_whatsapp(
     *,
