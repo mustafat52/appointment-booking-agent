@@ -326,6 +326,11 @@ def run_agent(user_message: str, state: BookingState) -> str:
                     state.selected_appointment_id,
                     doctor_id
                 )
+
+                logger.info(
+                f"Appointment cancelled | doctor_id={doctor_id} | "
+                f"appointment_id={state.selected_appointment_id}"
+            )
             except Exception:
                 state.reset_flow()
                 return (
@@ -334,10 +339,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 )
 
             state.reset_flow()
-            logger.info(
-                f"Appointment cancelled | doctor_id={doctor_id} | "
-                f"appointment_id={state.selected_appointment_id}"
-            )
+
 
             return "✅ Your appointment has been cancelled."
 
@@ -693,11 +695,13 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 new_calendar_event_id=existing_event_id,
             )
 
-            state.reset_flow()
             logger.info(
             f"Appointment rescheduled | doctor_id={doctor_id} | "
             f"appointment_id={state.selected_appointment_id}"
         )
+
+            state.reset_flow()
+
             return "✅ Appointment rescheduled successfully."
 
 
@@ -835,6 +839,12 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 state.patient_name,
                 state.patient_phone,
             )
+                logger.info(
+            f"Booking created | doctor_id={doctor_id} | "
+            f"date={state.date} | time={state.time}"
+        )
+
+                
             except Exception as e:
                 state.reset_flow()
                 return f"❌ Booking failed: {str(e)}"
@@ -849,10 +859,6 @@ def run_agent(user_message: str, state: BookingState) -> str:
             state.last_patient_phone = state.patient_phone
 
             state.reset_flow()
-            logger.info(
-            f"Booking created | doctor_id={doctor_id} | "
-            f"date={state.date} | time={state.time}"
-        )
 
 
             return (
