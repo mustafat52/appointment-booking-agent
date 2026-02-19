@@ -1,8 +1,7 @@
 import os
 import logging
 from twilio.rest import Client
-from db.database import SessionLocal
-from db.repository import get_doctor_by_id
+
 
 logger = logging.getLogger("medschedule")
 
