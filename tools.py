@@ -219,12 +219,12 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
         calendar_id = get_calendar_id_for_doctor(doctor_id)
 
         event = {
-            "summary": f"Patient Appointment – {patient_name}",
+            "summary": f"Appointment – {patient_name}",
             "description": (
                 f"Doctor: {doctor_db.name}\n"
                 f"Patient Name: {patient_name}\n"
                 f"Phone: {patient_phone}\n\n"
-                f"Booked via AI Appointment Agent"
+                f"Booked via MedSchedule AI"
             ),
             "start": {
                 "dateTime": start_dt.isoformat(),
@@ -234,12 +234,22 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
                 "dateTime": end_dt.isoformat(),
                 "timeZone": TIMEZONE,
             },
+            "reminders": {
+                "useDefault": False,
+                "overrides": [
+                    {"method": "popup", "minutes": 30},
+                    {"method": "email", "minutes": 120},
+                ],
+            },
         }
+
 
         created = service.events().insert(
             calendarId=calendar_id,
-            body=event
+            body=event,
+            sendUpdates="all"
         ).execute()
+
 
         event_id = created["id"]
 
@@ -310,6 +320,7 @@ def cancel_appointment_by_id(appointment_id, doctor_id):
             service.events().delete(
                 calendarId=calendar_id,
                 eventId=appt.calendar_event_id,
+                sendUpdates="all"
             ).execute()
         except Exception as e:
             raise RuntimeError(
@@ -384,8 +395,10 @@ def update_calendar_event(
     service.events().patch(
         calendarId=calendar_id,
         eventId=event_id,
-        body=event
+        body=event,
+        sendUpdates="all"
     ).execute()
+
 
 
 
