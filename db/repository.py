@@ -4,6 +4,7 @@ from datetime import date, time, datetime
 
 from db.database import SessionLocal
 from db.models import Doctor, Patient, Appointment , DoctorCalendarCredential, DoctorAuth
+from services.notification_service import notify_doctor_via_whatsapp
 
 
 # -------------------------
@@ -174,9 +175,25 @@ def cancel_appointment_db(appointment_id) -> None:
         appt = db.get(Appointment, appointment_id)
         if not appt:
             return
+
         appt.status = "CANCELLED"
         appt.updated_at = func.now()
         db.commit()
+
+        # 🔔 Doctor Notification (Cancel)
+        try:
+            notify_doctor_via_whatsapp(
+                doctor_id=appt.doctor_id,
+                message=(
+                    f"❌ Appointment Cancelled\n\n"
+                    f"Patient: {appt.patient_name}\n"
+                    f"Date: {appt.appointment_date}\n"
+                    f"Time: {appt.appointment_time.strftime('%H:%M')}"
+                )
+            )
+        except Exception:
+            pass
+
     finally:
         db.close()
 
@@ -194,6 +211,11 @@ def reschedule_appointment_db(
         if not appt:
             raise RuntimeError("Appointment not found")
 
+        # 🔹 Store old values before updating
+        old_date = appt.appointment_date
+        old_time = appt.appointment_time.strftime("%H:%M")
+
+        # 🔹 Apply new values
         appt.appointment_date = new_date
         appt.appointment_time = new_time
         if new_calendar_event_id is not None:
@@ -203,9 +225,27 @@ def reschedule_appointment_db(
 
         db.commit()
         db.refresh(appt)
+
+        # 🔔 Doctor Notification (Reschedule)
+        try:
+            notify_doctor_via_whatsapp(
+                doctor_id=appt.doctor_id,
+                message=(
+                    f"🔁 Appointment Rescheduled\n\n"
+                    f"Patient: {appt.patient_name}\n"
+                    f"Old: {old_date} – {old_time}\n"
+                    f"New: {appt.appointment_date} – "
+                    f"{appt.appointment_time.strftime('%H:%M')}"
+                )
+            )
+        except Exception:
+            pass
+
         return appt
+
     finally:
         db.close()
+
 
 
 # 🔹 NEW (Phase 6.5): get all ACTIVE appointments for patient
