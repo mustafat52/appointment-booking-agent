@@ -76,13 +76,14 @@ def handle_whatsapp_message(*, from_number: str, to_number: str, message_body: s
 
     session = whatsapp_state_store[from_number]
     msg = message_body.strip()
-
+    
     logger.info(
-    f"Session state | phone={from_number} | "
-    f"stage={session.stage} | "
-    f"intent={getattr(session.booking_state, 'intent', None)} | "
-    f"doctor_id={session.doctor_id}"
-)
+        f"Session state | phone={from_number} | "
+        f"stage={session.stage} | "
+        f"intent={getattr(session.booking_state, 'intent', None)} | "
+        f"doctor_id={getattr(session.booking_state, 'doctor_id', None)}"
+    )
+
 
 
     if msg.lower() in ["menu", "start", "options"]:
@@ -176,12 +177,30 @@ def handle_whatsapp_message(*, from_number: str, to_number: str, message_body: s
         return run_agent(intent, session.booking_state)
 
     # AGENT → free-form
-    if session.stage == WhatsAppStage.AGENT:
-        reply = run_agent(msg, session.booking_state)
 
-        if session.booking_state.is_done():
+    if session.stage == WhatsAppStage.AGENT:
+        try:
+            reply = run_agent(msg, session.booking_state)
+
+            if session.booking_state.is_done():
+                session.stage = WhatsAppStage.START
+                session.booking_state = None
+                return reply
+
+            return reply
+
+        except Exception:
+            logger.exception(
+                f"Agent crash | phone={from_number} | stage={session.stage}"
+            )
+
+            # Reset session safely
             session.stage = WhatsAppStage.START
             session.booking_state = None
-            return reply 
 
-        return reply
+            return (
+                "⚠️ Something unexpected happened.\n\n"
+                "Let's start fresh.\n"
+                "Please type *menu* to continue."
+            )
+
