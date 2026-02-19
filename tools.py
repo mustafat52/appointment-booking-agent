@@ -243,7 +243,7 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
 
 
 
-        created = service.events().patch(
+        created = service.events().insert(
             calendarId=calendar_id,
             body=event,
             sendUpdates="all"
