@@ -57,6 +57,19 @@ doctor_sessions = {}
 TIMEZONE = "Asia/Kolkata"
 
 
+def normalize_phone(number: str) -> str:
+    number = number.strip()
+    number = re.sub(r"[^\d+]", "", number)
+
+    if number.startswith("00"):
+        number = "+" + number[2:]
+
+    if not number.startswith("+"):
+        number = "+91" + number
+
+    return number
+
+
 def require_doctor(request: Request):
     session_id = request.cookies.get("doctor_session")
     if not session_id:
@@ -308,7 +321,8 @@ class DoctorOnboardRequest(BaseModel):
     name: str
     email: EmailStr
     clinic_email: EmailStr
-    whatsapp_number: str
+    doctor_whatsapp_number: str
+    clinic_phone_number: str
     slug: str | None = None
     working_days: list[int]
     work_start_time: time
@@ -354,12 +368,17 @@ def onboard_doctor(payload: DoctorOnboardRequest):
         detail=f"Doctor with email '{payload.email}' already exists"
     )
 
+    doctor_whatsapp = normalize_phone(payload.doctor_whatsapp_number)
+    clinic_phone = normalize_phone(payload.clinic_phone_number)
+
+
 
     doctor = create_doctor(
         name=payload.name,
         email=payload.email,
         clinic_email=payload.clinic_email,
-        whatsapp_number=payload.whatsapp_number,
+        doctor_whatsapp_number=doctor_whatsapp,
+        clinic_phone_number=clinic_phone,
         slug=slug,
         working_days=payload.working_days,
         work_start_time=payload.work_start_time,

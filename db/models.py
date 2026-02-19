@@ -20,7 +20,11 @@ class Doctor(Base):
     name = Column(String, nullable=False)
     email = Column(String, nullable=False)
     clinic_email = Column(String, nullable=False)
-    whatsapp_number = Column(String, nullable=True)
+    
+    doctor_whatsapp_number = Column(String, nullable=True)
+    clinic_phone_number = Column(String, nullable=True)
+    notifications_enabled = Column(Boolean, default=False)
+
 
     calendar_id = Column(String, nullable=False)
 

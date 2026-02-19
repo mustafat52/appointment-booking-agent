@@ -10,6 +10,7 @@ from doctor_config import DOCTORS, DEFAULT_DOCTOR_ID
 from sqlalchemy import select
 from db.database import SessionLocal
 from db.models import DoctorCalendarCredential
+from services.notification_service import notify_doctor_via_whatsapp
 
 
 
@@ -273,6 +274,22 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
             raise RuntimeError("Appointment creation failed after calendar event creation")
 
         db.commit()
+
+        
+        # 🔔 Doctor Notification (Safe, Non-Blocking)
+        try:
+            notify_doctor_via_whatsapp(
+                doctor_id=doctor_id,
+                message=(
+                    f"📅 New Appointment Booked\n\n"
+                    f"Patient: {patient_name}\n"
+                    f"Date: {date_str}\n"
+                    f"Time: {time_str}\n"
+                    f"Phone: {patient_phone}"
+                )
+            )
+        except Exception:
+            pass  # Never break booking flow
 
         return {
             "appointment_id": appt.appointment_id,
