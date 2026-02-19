@@ -245,7 +245,6 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
 
         created = service.events().patch(
             calendarId=calendar_id,
-            eventId=event_id,
             body=event,
             sendUpdates="all"
         ).execute()
