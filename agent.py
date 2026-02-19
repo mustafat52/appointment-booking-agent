@@ -23,6 +23,8 @@ from db.repository import (
     get_doctor_by_id
 )
 # =============================
+import logging
+logger = logging.getLogger("medschedule")
 
 
 CONTROL_WORDS = {"yes", "no", "confirm", "ok", "okay"}
@@ -332,6 +334,11 @@ def run_agent(user_message: str, state: BookingState) -> str:
                 )
 
             state.reset_flow()
+            logger.info(
+                f"Appointment cancelled | doctor_id={doctor_id} | "
+                f"appointment_id={state.selected_appointment_id}"
+            )
+
             return "✅ Your appointment has been cancelled."
 
         # -----------------------------------
@@ -687,7 +694,13 @@ def run_agent(user_message: str, state: BookingState) -> str:
             )
 
             state.reset_flow()
+            logger.info(
+            f"Appointment rescheduled | doctor_id={doctor_id} | "
+            f"appointment_id={state.selected_appointment_id}"
+        )
             return "✅ Appointment rescheduled successfully."
+
+
 
     # BOOK
     # ---------------------------
@@ -836,6 +849,11 @@ def run_agent(user_message: str, state: BookingState) -> str:
             state.last_patient_phone = state.patient_phone
 
             state.reset_flow()
+            logger.info(
+            f"Booking created | doctor_id={doctor_id} | "
+            f"date={state.date} | time={state.time}"
+        )
+
 
             return (
                 f"✅ Appointment booked for {booking['date']} at {booking['time']}.\n\n"

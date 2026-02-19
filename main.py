@@ -36,6 +36,16 @@ from email_service import send_daily_appointments_email
 
 from auth_utils import hash_password, verify_password
 
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+)
+
+logger = logging.getLogger("medschedule")
+
+
 
 app = FastAPI()
 
@@ -814,6 +824,11 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         to_number = payload.get("To")
         body = payload.get("Body", "").strip()
 
+        logger.info(
+            f"Incoming message | from={from_number} | to={to_number} | body='{body}'"
+        )
+
+
         # 🔥 Add background task (do not process inline)
         background_tasks.add_task(
             process_whatsapp_message,
@@ -823,7 +838,8 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         )
 
     except Exception as e:
-        print("❌ WhatsApp webhook error:", str(e))
+        logger.exception("Webhook error occurred")
+
 
     # 🚀 Immediate ACK (critical)
     return Response(status_code=200)
@@ -908,12 +924,30 @@ def test_whatsapp():
         return {"error": str(e)}
 
 
+import time
+import logging
+
+logger = logging.getLogger("medschedule")
+
+
 def process_whatsapp_message(from_number, to_number, body):
+    start_time = time.time()
+
     try:
+        logger.info(
+            f"Processing started | from={from_number} | body='{body}'"
+        )
+
         reply_text = handle_whatsapp_message(
             from_number=from_number,
             to_number=to_number,
             message_body=body
+        )
+
+        duration = round(time.time() - start_time, 3)
+
+        logger.info(
+            f"Reply generated | from={from_number} | duration={duration}s"
         )
 
         twilio_client.messages.create(
@@ -922,8 +956,14 @@ def process_whatsapp_message(from_number, to_number, body):
             to=from_number,
         )
 
-    except Exception as e:
-        print("❌ WhatsApp processing failed:", str(e))
+        logger.info(
+            f"Reply sent successfully | to={from_number}"
+        )
+
+    except Exception:
+        logger.exception(
+            f"Processing error | from={from_number}"
+        )
 
         try:
             twilio_client.messages.create(
@@ -931,5 +971,11 @@ def process_whatsapp_message(from_number, to_number, body):
                 from_=TWILIO_WHATSAPP_NUMBER,
                 to=from_number,
             )
-        except:
-            pass
+            logger.info(
+                f"Fallback message sent | to={from_number}"
+            )
+        except Exception:
+            logger.exception(
+                f"Fallback send failed | to={from_number}"
+            )
+

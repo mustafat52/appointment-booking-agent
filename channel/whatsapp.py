@@ -1,5 +1,7 @@
 from enum import Enum
 from typing import Dict
+
+
 from agent import run_agent
 from state import BookingState
 from db.database import SessionLocal
@@ -7,7 +9,8 @@ from db.repository import get_doctor_by_whatsapp_number, get_doctor_by_id,upsert
 from datetime import datetime
 import pytz
 
-
+import logging
+logger = logging.getLogger("medschedule")
 
 
 # --------------------------------------------------
@@ -73,6 +76,14 @@ def handle_whatsapp_message(*, from_number: str, to_number: str, message_body: s
 
     session = whatsapp_state_store[from_number]
     msg = message_body.strip()
+
+    logger.info(
+    f"Session state | phone={from_number} | "
+    f"stage={session.stage} | "
+    f"intent={getattr(session.booking_state, 'intent', None)} | "
+    f"doctor_id={session.doctor_id}"
+)
+
 
     if msg.lower() in ["menu", "start", "options"]:
         session.stage = WhatsAppStage.MENU
