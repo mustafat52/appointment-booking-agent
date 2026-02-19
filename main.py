@@ -906,10 +906,10 @@ def get_doctor_whatsapp_qr(request: Request):
     finally:
         db.close()
 
-    if not doctor or not doctor.whatsapp_number:
+    if not doctor:
         raise HTTPException(
             status_code=400,
-            detail="Doctor WhatsApp number not configured."
+            detail="Doctor not found."
         )
 
     PLATFORM_WHATSAPP_NUMBER = "+14155238886"
