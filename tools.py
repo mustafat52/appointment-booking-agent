@@ -219,9 +219,8 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
         calendar_id = get_calendar_id_for_doctor(doctor_id)
 
         event = {
-            "summary": f"Appointment – {patient_name}",
+            "summary": f"New Appointment – {patient_name}",
             "description": (
-                f"Doctor: {doctor_db.name}\n"
                 f"Patient Name: {patient_name}\n"
                 f"Phone: {patient_phone}\n\n"
                 f"Booked via MedSchedule AI"
@@ -234,18 +233,19 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
                 "dateTime": end_dt.isoformat(),
                 "timeZone": TIMEZONE,
             },
+            "attendees": [
+                {"email": doctor_db.email}
+            ],
             "reminders": {
-                "useDefault": False,
-                "overrides": [
-                    {"method": "popup", "minutes": 30},
-                    {"method": "email", "minutes": 120},
-                ],
+                "useDefault": True
             },
         }
 
 
-        created = service.events().insert(
+
+        created = service.events().patch(
             calendarId=calendar_id,
+            eventId=event_id,
             body=event,
             sendUpdates="all"
         ).execute()
@@ -267,8 +267,10 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
             # rollback calendar event
             service.events().delete(
                 calendarId=calendar_id,
-                eventId=event_id
+                eventId=appt.calendar_event_id,
+                sendUpdates="all"
             ).execute()
+
             raise RuntimeError("Appointment creation failed after calendar event creation")
 
         db.commit()
