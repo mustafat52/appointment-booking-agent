@@ -168,7 +168,6 @@ def get_appointment_by_event_id(event_id: str) -> Appointment | None:
     finally:
         db.close()
 
-
 def cancel_appointment_db(appointment_id) -> None:
     db = get_db_session()
     try:
@@ -180,10 +179,13 @@ def cancel_appointment_db(appointment_id) -> None:
         appt.updated_at = func.now()
         db.commit()
 
+        # 🔹 Explicitly fetch doctor
+        doctor = db.get(Doctor, appt.doctor_id)
+
         # 🔔 Doctor Notification (Cancel)
         try:
             notify_doctor_via_whatsapp(
-                doctor=appt.doctor,
+                doctor=doctor,
                 message=(
                     f"❌ Appointment Cancelled\n\n"
                     f"Patient: {appt.patient_name}\n"
@@ -229,7 +231,7 @@ def reschedule_appointment_db(
         # 🔔 Doctor Notification (Reschedule)
         try:
             notify_doctor_via_whatsapp(
-                doctor=appt.doctor,
+                doctor = db.get(Doctor, appt.doctor_id),
                 message=(
                     f"🔁 Appointment Rescheduled\n\n"
                     f"Patient: {appt.patient_name}\n"

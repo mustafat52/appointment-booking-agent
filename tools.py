@@ -7,7 +7,7 @@ from auth_store import oauth_store
 
 # LEGACY (fallback only – do not add new logic here)
 from doctor_config import DOCTORS, DEFAULT_DOCTOR_ID
-from sqlalchemy import select
+from sqlalchemy import false, select
 from db.database import SessionLocal
 from db.models import DoctorCalendarCredential
 from services.notification_service import notify_doctor_via_whatsapp
@@ -237,10 +237,13 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
             "attendees": [
                 {"email": doctor_db.email}
             ],
-            "reminders": {
-                "useDefault": True
-            },
+           "reminders": {
+            "useDefault": false,
+            "overrides": [
+                { "method": "popup", "minutes": 30 }
+            ]
         }
+    }
 
 
 
