@@ -180,7 +180,7 @@ def cancel_appointment_db(appointment_id) -> None:
         db.commit()
 
         # 🔹 Explicitly fetch doctor
-        doctor = db.get(Doctor, appt.doctor_id)
+        doctor = get_doctor_by_id(appt.doctor_id)
 
         # 🔔 Doctor Notification (Cancel)
         try:
@@ -231,7 +231,7 @@ def reschedule_appointment_db(
         # 🔔 Doctor Notification (Reschedule)
         try:
             notify_doctor_via_whatsapp(
-                doctor = db.get(Doctor, appt.doctor_id),
+                doctor = get_doctor_by_id(appt.doctor_id),
                 message=(
                     f"🔁 Appointment Rescheduled\n\n"
                     f"Patient: {appt.patient_name}\n"
