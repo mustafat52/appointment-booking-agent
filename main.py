@@ -998,3 +998,67 @@ def process_whatsapp_message(from_number, to_number, body):
                 f"Fallback send failed | to={from_number}"
             )
 
+
+# -----------------------------------------------
+# Dental AI Triage Chat  (homepage floating bot)
+# Supports text-only AND image + text queries.
+# Completely separate from /chat booking endpoint.
+# No session cookie required — public, stateless.
+# -----------------------------------------------
+from services.dental_ai_service import get_dental_ai_response
+from fastapi import File, Form, UploadFile
+
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024  # 4 MB
+
+
+@app.post("/dental-chat")
+async def dental_chat(
+    message: str = Form(default=""),
+    image: UploadFile | None = File(default=None),
+):
+    """
+    Public AI dental triage endpoint.
+    Accepts multipart/form-data with:
+      - message  (str, optional if image is sent)
+      - image    (file, optional — jpg/png/webp/gif, max 4 MB)
+
+    Does NOT affect the booking bot (/chat) in any way.
+    """
+    # ── Validate input ─────────────────────────────────────────────
+    if not message.strip() and image is None:
+        raise HTTPException(status_code=400, detail="Please provide a message or an image.")
+
+    image_bytes = None
+    image_content_type = "image/jpeg"
+
+    if image is not None:
+        # Content-type check
+        if image.content_type not in ALLOWED_IMAGE_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported image type: {image.content_type}. Please upload JPG, PNG, or WebP."
+            )
+
+        image_bytes = await image.read()
+
+        # Size check
+        if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="Image is too large. Please upload an image under 4 MB."
+            )
+
+        image_content_type = image.content_type
+        logger.info(
+            f"Dental chat image received | type={image.content_type} | size={len(image_bytes)} bytes"
+        )
+
+    # ── Call AI service ────────────────────────────────────────────
+    reply = await get_dental_ai_response(
+        user_message=message,
+        image_bytes=image_bytes,
+        image_content_type=image_content_type,
+    )
+
+    return JSONResponse({"reply": reply})

@@ -125,6 +125,228 @@
             cursor: pointer;
             font-weight: 600;
         }
+
+        /* ── Dental AI Chat Widget ── */
+        #dental-bubble {
+            position: fixed;
+            bottom: 28px;
+            right: 28px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 12px;
+            font-family: 'DM Sans', sans-serif;
+        }
+        #dental-bubble-btn {
+            width: 62px;
+            height: 62px;
+            border-radius: 50%;
+            background: var(--gradient-1);
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 6px 24px rgba(0,168,120,0.45);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.7rem;
+            transition: transform 0.25s, box-shadow 0.25s;
+            position: relative;
+        }
+        #dental-bubble-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 10px 32px rgba(0,168,120,0.55);
+        }
+        #dental-bubble-btn::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: var(--gradient-1);
+            opacity: 0.35;
+            animation: pulse-ring 2.2s infinite;
+        }
+        #dental-bubble-label {
+            background: var(--text-dark);
+            color: white;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            white-space: nowrap;
+            letter-spacing: 0.01em;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+            animation: fadeInLabel 0.4s ease;
+        }
+        @keyframes fadeInLabel { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+        #dental-panel {
+            display: none;
+            width: 360px;
+            background: #ffffff;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+            flex-direction: column;
+            overflow: hidden;
+            border: 1px solid rgba(0,168,120,0.15);
+            animation: slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1);
+        }
+        @keyframes slideUp { from { opacity:0; transform:translateY(20px) scale(0.96); } to { opacity:1; transform:translateY(0) scale(1); } }
+        #dental-panel.open { display: flex; }
+        .dp-header {
+            background: var(--gradient-1);
+            padding: 16px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: white;
+        }
+        .dp-header-left { display: flex; align-items: center; gap: 10px; }
+        .dp-avatar {
+            width: 40px; height: 40px;
+            background: rgba(255,255,255,0.25);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.3rem;
+        }
+        .dp-header-title { font-family: 'Sora', sans-serif; font-weight: 700; font-size: 0.95rem; }
+        .dp-header-sub { font-size: 0.75rem; opacity: 0.88; margin-top: 1px; }
+        .dp-close {
+            background: rgba(255,255,255,0.2);
+            border: none; color: white;
+            width: 30px; height: 30px; border-radius: 50%;
+            cursor: pointer; font-size: 1.1rem;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.2s;
+        }
+        .dp-close:hover { background: rgba(255,255,255,0.35); }
+        #dp-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 340px;
+            min-height: 180px;
+            background: #f7fbfa;
+        }
+        .dp-msg {
+            display: flex;
+            gap: 8px;
+            max-width: 92%;
+            animation: msgIn 0.2s ease;
+        }
+        @keyframes msgIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+        .dp-msg.user { align-self: flex-end; flex-direction: row-reverse; }
+        .dp-msg.bot { align-self: flex-start; }
+        .dp-bubble {
+            padding: 10px 14px;
+            border-radius: 16px;
+            font-size: 0.88rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+        .dp-msg.user .dp-bubble {
+            background: var(--primary);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+        .dp-msg.bot .dp-bubble {
+            background: white;
+            color: var(--text-dark);
+            border: 1px solid rgba(0,168,120,0.12);
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .dp-typing { display: flex; gap: 4px; align-items: center; padding: 10px 14px; }
+        .dp-typing span {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: var(--primary); opacity: 0.5;
+            animation: bounce 1.2s infinite;
+        }
+        .dp-typing span:nth-child(2) { animation-delay: 0.2s; }
+        .dp-typing span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce { 0%,60%,100%{transform:translateY(0);} 30%{transform:translateY(-6px);} }
+        .dp-footer {
+            padding: 12px 14px;
+            border-top: 1px solid rgba(0,168,120,0.1);
+            display: flex;
+            gap: 8px;
+            background: white;
+        }
+        #dp-input {
+            flex: 1;
+            border: 1.5px solid rgba(0,168,120,0.25);
+            border-radius: 10px;
+            padding: 9px 13px;
+            font-size: 0.88rem;
+            font-family: 'DM Sans', sans-serif;
+            outline: none;
+            transition: border-color 0.2s;
+            resize: none;
+        }
+        #dp-input:focus { border-color: var(--primary); }
+        #dp-send {
+            background: var(--gradient-1);
+            border: none; color: white;
+            width: 38px; height: 38px;
+            border-radius: 10px; cursor: pointer;
+            font-size: 1rem;
+            display: flex; align-items: center; justify-content: center;
+            transition: transform 0.2s, opacity 0.2s;
+            flex-shrink: 0;
+        }
+        #dp-send:hover { transform: scale(1.08); }
+        #dp-send:disabled { opacity: 0.5; cursor: default; transform: none; }
+        .dp-disclaimer {
+            text-align: center;
+            font-size: 0.72rem;
+            color: #aaa;
+            padding: 0 14px 10px;
+            background: white;
+        }
+        #dp-attach {
+            background: none;
+            border: 1.5px solid rgba(0,168,120,0.25);
+            border-radius: 10px;
+            width: 38px; height: 38px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            display: flex; align-items: center; justify-content: center;
+            transition: border-color 0.2s, background 0.2s;
+            flex-shrink: 0;
+            color: var(--text-gray);
+        }
+        #dp-attach:hover { border-color: var(--primary); background: #f0fdf9; }
+        #dp-attach.has-image { border-color: var(--primary); background: #e6faf4; color: var(--primary); }
+        #dp-image-preview {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            background: #f0fdf9;
+            border-top: 1px solid rgba(0,168,120,0.12);
+            font-size: 0.78rem;
+            color: var(--text-gray);
+        }
+        #dp-image-preview.visible { display: flex; }
+        #dp-preview-thumb {
+            width: 36px; height: 36px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 1px solid rgba(0,168,120,0.2);
+        }
+        #dp-preview-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        #dp-preview-remove {
+            background: none; border: none;
+            color: #aaa; cursor: pointer;
+            font-size: 1rem; padding: 0 2px; line-height: 1;
+        }
+        #dp-preview-remove:hover { color: #e55; }
+        @media (max-width: 420px) {
+            #dental-panel { width: calc(100vw - 32px); }
+            #dental-bubble { right: 16px; bottom: 16px; }
+        }
     </style>
 </head>
 <body>
@@ -208,7 +430,7 @@
     </p>
 
     <div class="contact-info">
-      <p>📧 <strong>Email:</strong> mustafataj13@gmail.com</p>
+      <p>📧 <strong>Email:</strong> <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="39544c4a4d585f584d5853080a795e54585055175a5654">[email&#160;protected]</a></p>
       <p>📱 <strong>WhatsApp:</strong> <a href="https://wa.me/91XXXXXXXXXX">+91 9550253852</a></p>
     </div>
 
@@ -216,17 +438,221 @@
     </div>
     </div>
 
-    <script>
-  function openContactModal() {
-    document.getElementById("contactModal").style.display = "flex";
-  }
-
-  function closeContactModal() {
-    document.getElementById("contactModal").style.display = "none";
-  }
+    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+  function openContactModal() { document.getElementById('contactModal').style.display='flex'; }
+  function closeContactModal() { document.getElementById('contactModal').style.display='none'; }
     </script>
 
+    <!-- ── Dental AI Chat Widget ── -->
+    <div id="dental-bubble">
+        <div id="dental-panel">
+            <div class="dp-header">
+                <div class="dp-header-left">
+                    <div class="dp-avatar">🦷</div>
+                    <div>
+                        <div class="dp-header-title">DentalAssist AI</div>
+                        <div class="dp-header-sub">Describe your symptoms — I'll help!</div>
+                    </div>
+                </div>
+                <button class="dp-close" onclick="closeDentalPanel()">✕</button>
+            </div>
+            <div id="dp-messages">
+                <div class="dp-msg bot">
+                    <div class="dp-bubble">👋 Hi! I'm your dental assistant. Tell me what's bothering you — like <em>"my tooth hurts when I drink cold water"</em> or <em>"my gums are bleeding"</em> — and I'll help you understand what's going on.</div>
+                </div>
+            </div>
+            <div id="dp-image-preview">
+                <img id="dp-preview-thumb" src="" alt="preview"/>
+                <span id="dp-preview-name"></span>
+                <button id="dp-preview-remove" onclick="dpRemoveImage()" title="Remove image">✕</button>
+            </div>
+            <div class="dp-footer">
+                <input type="file" id="dp-file-input" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="dpHandleImage(event)">
+                <button id="dp-attach" onclick="document.getElementById('dp-file-input').click()" title="Attach dental photo">📎</button>
+                <textarea id="dp-input" rows="1" placeholder="Describe your concern or attach a photo..." onkeydown="dpHandleKey(event)"></textarea>
+                <button id="dp-send" onclick="dpSend()">➤</button>
+            </div>
+            <div class="dp-disclaimer">🤖 AI guidance only — not a medical diagnosis</div>
+        </div>
+        <div id="dental-bubble-label">Ask our Dental AI 🦷</div>
+        <button id="dental-bubble-btn" onclick="toggleDentalPanel()" title="Chat with Dental AI">🦷</button>
+    </div>
 
+    <script>
+        let dpOpen = false;
+        let dpBusy = false;
+        let dpSelectedImage = null; // { file, objectURL }
+
+        function dpHandleImage(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const allowed = ['image/jpeg','image/png','image/webp'];
+            if (!allowed.includes(file.type)) {
+                dpAppend('bot', '⚠️ Please upload a JPG, PNG, or WebP image.');
+                return;
+            }
+            if (file.size > 4 * 1024 * 1024) {
+                dpAppend('bot', '⚠️ Image is too large. Please upload one under 4 MB.');
+                return;
+            }
+
+            // Revoke previous object URL to avoid memory leak
+            if (dpSelectedImage) URL.revokeObjectURL(dpSelectedImage.objectURL);
+
+            const objectURL = URL.createObjectURL(file);
+            dpSelectedImage = { file, objectURL };
+
+            // Show preview bar
+            document.getElementById('dp-preview-thumb').src = objectURL;
+            document.getElementById('dp-preview-name').textContent = file.name;
+            document.getElementById('dp-image-preview').classList.add('visible');
+            document.getElementById('dp-attach').classList.add('has-image');
+
+            // Reset file input so same file can be re-selected
+            event.target.value = '';
+        }
+
+        function dpRemoveImage() {
+            if (dpSelectedImage) {
+                URL.revokeObjectURL(dpSelectedImage.objectURL);
+                dpSelectedImage = null;
+            }
+            document.getElementById('dp-image-preview').classList.remove('visible');
+            document.getElementById('dp-attach').classList.remove('has-image');
+            document.getElementById('dp-preview-thumb').src = '';
+            document.getElementById('dp-preview-name').textContent = '';
+        }
+
+        function toggleDentalPanel() {
+            dpOpen = !dpOpen;
+            const panel = document.getElementById('dental-panel');
+            const label = document.getElementById('dental-bubble-label');
+            if (dpOpen) {
+                panel.classList.add('open');
+                label.style.display = 'none';
+                document.getElementById('dp-input').focus();
+            } else {
+                panel.classList.remove('open');
+                label.style.display = 'block';
+            }
+        }
+
+        function closeDentalPanel() {
+            dpOpen = false;
+            document.getElementById('dental-panel').classList.remove('open');
+            document.getElementById('dental-bubble-label').style.display = 'block';
+        }
+
+        function dpHandleKey(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                dpSend();
+            }
+        }
+
+        function dpAppend(role, text) {
+            const box = document.getElementById('dp-messages');
+            const wrap = document.createElement('div');
+            wrap.className = `dp-msg ${role}`;
+            const bubble = document.createElement('div');
+            bubble.className = 'dp-bubble';
+            bubble.textContent = text;
+            wrap.appendChild(bubble);
+            box.appendChild(wrap);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function dpShowTyping() {
+            const box = document.getElementById('dp-messages');
+            const wrap = document.createElement('div');
+            wrap.className = 'dp-msg bot';
+            wrap.id = 'dp-typing-indicator';
+            wrap.innerHTML = '<div class="dp-bubble dp-typing"><span></span><span></span><span></span></div>';
+            box.appendChild(wrap);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function dpRemoveTyping() {
+            const t = document.getElementById('dp-typing-indicator');
+            if (t) t.remove();
+        }
+
+        async function dpSend() {
+            if (dpBusy) return;
+            const input   = document.getElementById('dp-input');
+            const sendBtn = document.getElementById('dp-send');
+            const text    = input.value.trim();
+
+            // Must have text OR image
+            if (!text && !dpSelectedImage) return;
+
+            // Show user message in chat
+            if (dpSelectedImage && text) {
+                dpAppendImageMsg(dpSelectedImage.objectURL, text);
+            } else if (dpSelectedImage) {
+                dpAppendImageMsg(dpSelectedImage.objectURL, '');
+            } else {
+                dpAppend('user', text);
+            }
+
+            input.value = '';
+            input.style.height = 'auto';
+            dpBusy = true;
+            sendBtn.disabled = true;
+            dpShowTyping();
+
+            // Build FormData (works for text-only and image+text)
+            const formData = new FormData();
+            formData.append('message', text);
+            if (dpSelectedImage) {
+                formData.append('image', dpSelectedImage.file);
+            }
+
+            // Clear image preview after attaching to FormData
+            dpRemoveImage();
+
+            try {
+                const res = await fetch('/dental-chat', {
+                    method: 'POST',
+                    body: formData   // No Content-Type header — browser sets multipart boundary
+                });
+                const data = await res.json();
+                dpRemoveTyping();
+                dpAppend('bot', data.reply || '⚠️ No response received.');
+            } catch (err) {
+                dpRemoveTyping();
+                dpAppend('bot', '⚠️ Could not connect to the AI. Please try again.');
+                console.error(err);
+            } finally {
+                dpBusy = false;
+                sendBtn.disabled = false;
+            }
+        }
+
+        function dpAppendImageMsg(objectURL, caption) {
+            const box  = document.getElementById('dp-messages');
+            const wrap = document.createElement('div');
+            wrap.className = 'dp-msg user';
+            let html = `<div class="dp-bubble" style="padding:6px;">
+                <img src="${objectURL}" style="max-width:180px;border-radius:8px;display:block;margin-bottom:${caption?'6px':'0'}">
+                ${caption ? `<span style="font-size:0.85rem">${caption}</span>` : ''}
+            </div>`;
+            wrap.innerHTML = html;
+            box.appendChild(wrap);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        // Auto-resize textarea
+        document.addEventListener('DOMContentLoaded', () => {
+            const ta = document.getElementById('dp-input');
+            if (ta) {
+                ta.addEventListener('input', () => {
+                    ta.style.height = 'auto';
+                    ta.style.height = Math.min(ta.scrollHeight, 80) + 'px';
+                });
+            }
+        });
+    </script>
 </body>
 </html>
-
