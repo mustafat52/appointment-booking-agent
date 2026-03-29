@@ -2,14 +2,11 @@
 
 import json
 import os
-import google.generativeai as genai
+import httpx
 
-GENAI_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "models/gemini-flash-latest")
-
-genai.configure(api_key=GENAI_API_KEY)
-model = genai.GenerativeModel(MODEL_NAME)
-
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+MODEL_NAME   = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
 
 SYSTEM_PROMPT = """You are an information extraction engine for a doctor appointment assistant.
 
@@ -106,19 +103,42 @@ def extract_entities(user_message: str, current_intent: str | None = None) -> di
     Stateless. Safe. JSON-only.
     """
 
-    prompt = f"""
-{SYSTEM_PROMPT}
-
-User message:
+    user_prompt = f"""User message:
 "{user_message}"
 
 Current intent (if known):
 "{current_intent}"
-"""
+
+Output STRICT JSON only. No explanation, no markdown."""
 
     try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
+        response = httpx.post(
+            GROQ_API_URL,
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": MODEL_NAME,
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user",   "content": user_prompt},
+                ],
+                "max_tokens": 200,
+                "temperature": 0.0,  # deterministic for extraction
+            },
+            timeout=10.0,
+        )
+        response.raise_for_status()
+
+        text = response.json()["choices"][0]["message"]["content"].strip()
+
+        # Strip markdown fences if model wraps in ```json ... ```
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
 
         data = json.loads(text)
 

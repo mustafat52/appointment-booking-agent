@@ -5,12 +5,12 @@ import httpx
 
 logger = logging.getLogger("medschedule")
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-# Gemini free-tier models
-# - gemini-1.5-flash  → supports text + vision, very fast, generous free quota
-GEMINI_MODEL   = "gemini-2.0-flash"
-GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1/models/{GEMINI_MODEL}:generateContent"
+# meta-llama/llama-4-scout-17b-16e-instruct supports both text + vision (free)
+GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+GROQ_TEXT_MODEL   = "llama-3.3-70b-versatile"
 
 DENTAL_SYSTEM_PROMPT = """You are DentalAssist AI, a friendly and knowledgeable dental health assistant 
 for a smart dental management system. Your role is to help patients understand their dental symptoms 
@@ -46,29 +46,9 @@ Rules:
 """
 
 
-def _build_parts(user_message: str, image_bytes: bytes | None, image_content_type: str) -> list:
-    """
-    Build the Gemini API 'parts' list.
-    Gemini accepts inline image data directly — no base64 data URL needed,
-    just raw base64 + mimeType in an inlineData block.
-    """
-    parts = []
-
-    if image_bytes:
-        parts.append({
-            "inlineData": {
-                "mimeType": image_content_type,
-                "data": base64.b64encode(image_bytes).decode("utf-8"),
-            }
-        })
-
-    text = user_message.strip() or (
-        "Please analyse this dental image and tell me what you see." if image_bytes else ""
-    )
-    if text:
-        parts.append({"text": text})
-
-    return parts
+def _encode_image(image_bytes: bytes, content_type: str) -> str:
+    b64 = base64.b64encode(image_bytes).decode("utf-8")
+    return f"data:{content_type};base64,{b64}"
 
 
 async def get_dental_ai_response(
@@ -77,74 +57,65 @@ async def get_dental_ai_response(
     image_content_type: str = "image/jpeg",
 ) -> str:
     """
-    Sends user message (and optionally an image) to Gemini API.
-
-    - image_bytes provided  → multimodal (image + text)
-    - text only             → text-only request
-
-    Both use the same gemini-1.5-flash model (free tier).
-    Returns the AI response string.
+    Sends user message (and optionally an image) to Groq API.
+    - image provided → vision model
+    - text only      → fast text model
     """
-    if not GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY not set in environment")
+    if not GROQ_API_KEY:
+        logger.error("GROQ_API_KEY not set in environment")
         return "⚠️ AI assistant is currently unavailable. Please call us or book an appointment directly."
 
-    parts = _build_parts(user_message, image_bytes, image_content_type)
-
-    if not parts:
-        return "⚠️ Please send a message or an image so I can help you!"
-
-    # v1 API does not support system_instruction.
-    # We inject the system prompt as the first user/model exchange instead.
-    payload = {
-        "contents": [
-            {
-                "role": "user",
-                "parts": [{"text": DENTAL_SYSTEM_PROMPT}],
-            },
-            {
-                "role": "model",
-                "parts": [{"text": "Understood! I am DentalAssist AI. I am ready to help patients with their dental concerns. Please share your symptoms or a dental image."}],
-            },
-            {
-                "role": "user",
-                "parts": parts,
-            },
-        ],
-        "generationConfig": {
-            "maxOutputTokens": 450,
-            "temperature": 0.5,
-        },
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
     }
 
-    url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}"
+    # ── Build message content ──────────────────────────────────────
+    if image_bytes:
+        image_data_url = _encode_image(image_bytes, image_content_type)
+        user_text = (
+            user_message.strip()
+            if user_message.strip()
+            else "Please analyse this dental image and tell me what you see."
+        )
+        content = [
+            {"type": "image_url", "image_url": {"url": image_data_url}},
+            {"type": "text",      "text": user_text},
+        ]
+        model = GROQ_VISION_MODEL
+    else:
+        content = user_message.strip()
+        model   = GROQ_TEXT_MODEL
 
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": DENTAL_SYSTEM_PROMPT},
+            {"role": "user",   "content": content},
+        ],
+        "max_tokens": 450,
+        "temperature": 0.5,
+    }
+
+    # ── Call Groq ──────────────────────────────────────────────────
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.post(
-                url,
-                headers={"Content-Type": "application/json"},
-                json=payload,
-            )
+            response = await client.post(GROQ_API_URL, headers=headers, json=payload)
             response.raise_for_status()
             data  = response.json()
-            reply = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            reply = data["choices"][0]["message"]["content"].strip()
             logger.info(
-                f"Dental AI response generated | model={GEMINI_MODEL} | vision={'yes' if image_bytes else 'no'}"
+                f"Dental AI response generated | model={model} | vision={'yes' if image_bytes else 'no'}"
             )
             return reply
 
     except httpx.TimeoutException:
-        logger.warning("Gemini API timed out")
+        logger.warning("Groq API timed out")
         return "⏱️ The AI is taking a bit longer than usual. Please try again in a moment."
 
     except httpx.HTTPStatusError as e:
-        logger.error(f"Gemini API HTTP error: {e.response.status_code} — {e.response.text}")
+        logger.error(f"Groq API HTTP error: {e.response.status_code} — {e.response.text}")
         return "⚠️ AI assistant is temporarily unavailable. Please try again shortly."
-
-    except (KeyError, IndexError) as e:
-        logger.error(f"Unexpected Gemini response structure: {e}")
-        return "⚠️ Received an unexpected response from AI. Please try again."
 
     except Exception as e:
         logger.exception(f"Unexpected error in dental AI service: {str(e)}")
