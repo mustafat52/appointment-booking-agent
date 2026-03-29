@@ -94,15 +94,22 @@ async def get_dental_ai_response(
     if not parts:
         return "⚠️ Please send a message or an image so I can help you!"
 
+    # v1 API does not support system_instruction.
+    # We inject the system prompt as the first user/model exchange instead.
     payload = {
-        "system_instruction": {
-            "parts": [{"text": DENTAL_SYSTEM_PROMPT}]
-        },
         "contents": [
             {
                 "role": "user",
+                "parts": [{"text": DENTAL_SYSTEM_PROMPT}],
+            },
+            {
+                "role": "model",
+                "parts": [{"text": "Understood! I am DentalAssist AI. I am ready to help patients with their dental concerns. Please share your symptoms or a dental image."}],
+            },
+            {
+                "role": "user",
                 "parts": parts,
-            }
+            },
         ],
         "generationConfig": {
             "maxOutputTokens": 450,
