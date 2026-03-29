@@ -9,7 +9,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Gemini free-tier models
 # - gemini-1.5-flash  → supports text + vision, very fast, generous free quota
-GEMINI_MODEL   = "gemini-1.5-flash"
+GEMINI_MODEL   = "gemini-2.0-flash"
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1/models/{GEMINI_MODEL}:generateContent"
 
 DENTAL_SYSTEM_PROMPT = """You are DentalAssist AI, a friendly and knowledgeable dental health assistant 
