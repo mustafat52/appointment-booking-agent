@@ -49,7 +49,11 @@ logger = logging.getLogger("medschedule")
 
 app = FastAPI()
 
+from voice_routes import voice_router
+app.include_router(voice_router)
 
+from call_log_route import call_log_router   # optional, for dashboard
+app.include_router(call_log_router)
 
 doctor_sessions = {}
 
@@ -84,6 +88,24 @@ def require_doctor(request: Request):
 # Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+class DentalKnowledgeRequest(BaseModel):
+    message: str
+ 
+ 
+# ── Route ────────────────────────────────────────────────────────
+@app.post("/ask-dentist")
+async def ask_dentist(payload: DentalKnowledgeRequest):
+    """
+    Public dental knowledge chatbot — text only, JSON body.
+    Answers patient questions about symptoms, treatments, and care.
+    Reuses get_dental_ai_response() — same Groq service as /dental-chat.
+    No session cookie required. Separate from /chat booking bot.
+    """
+    if not payload.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+ 
+    reply = await get_dental_ai_response(user_message=payload.message)
+    return JSONResponse({"reply": reply})
 
 # 🏠 Homepage route
 @app.get("/")

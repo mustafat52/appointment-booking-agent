@@ -62,6 +62,7 @@ class Appointment(Base):
 
     appointment_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
+
     doctor_id = Column(UUID(as_uuid=True), ForeignKey("doctors.doctor_id"))
     patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.patient_id"))
 
@@ -70,6 +71,9 @@ class Appointment(Base):
 
     status = Column(String, default="BOOKED")
     calendar_event_id = Column(String)
+
+    treatment_key    = Column(String(64),  nullable=True)
+    duration_minutes = Column(Integer,     nullable=True)
 
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())

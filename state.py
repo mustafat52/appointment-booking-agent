@@ -1,4 +1,9 @@
-# state.py
+# state.py  (Phase 2 — treatment-aware)
+# ─────────────────────────────────────────────────────────────────
+# Drop-in replacement for state.py.
+# ONE new field added to BookingState: treatment_key
+# All existing stages, flow, and reset helpers are 100% preserved.
+# ─────────────────────────────────────────────────────────────────
 
 from enum import Enum, auto
 
@@ -6,7 +11,7 @@ from enum import Enum, auto
 class FlowStage(Enum):
     """
     Authoritative conversation stages.
-    The agent MUST rely on this to decide behavior.
+    The agent MUST rely on this to decide behaviour.
     """
 
     # Global
@@ -14,6 +19,7 @@ class FlowStage(Enum):
     INTENT_CONFIRM_SWITCH = auto()
 
     # Booking flow
+    BOOK_TREATMENT = auto()   # ← NEW: collect treatment before date
     BOOK_DATE = auto()
     BOOK_TIME = auto()
     BOOK_CONFIRM = auto()
@@ -29,7 +35,7 @@ class FlowStage(Enum):
     RESCHEDULE_TIME = auto()
     RESCHEDULE_CONFIRM = auto()
 
-    CHANGE_CHOICE = auto()  # for changing date/time during confirm stages
+    CHANGE_CHOICE = auto()
 
 
 class BookingState:
@@ -49,6 +55,7 @@ class BookingState:
         # ------------------
         # Booking data (in-progress)
         # ------------------
+        self.treatment_key: str | None = None   # ← NEW e.g. "root_canal"
         self.date = None
         self.time = None
         self.patient_name = None
@@ -57,7 +64,7 @@ class BookingState:
         # ------------------
         # Cancellation / Reschedule data
         # ------------------
-        self.candidate_appointments = None      # list[Appointment]
+        self.candidate_appointments = None
         self.selected_appointment_id = None
 
         # Reschedule-specific
@@ -79,23 +86,20 @@ class BookingState:
         # Misc helpers
         # ------------------
         self.greeted = False
-        self.pending_intent_switch: str | None = None  # for confirmation flow
+        self.pending_intent_switch: str | None = None
 
         self._reschedule_initialized = False
 
-
     # -------------------------------------------------
-    # Reset helpers (VERY IMPORTANT)
+    # Reset helpers
     # -------------------------------------------------
 
     def reset_flow(self):
-        """
-        Full reset of conversation flow.
-        Doctor context is preserved.
-        """
+        """Full reset. Doctor context is preserved."""
         self.intent = None
         self.stage = FlowStage.IDLE
 
+        self.treatment_key = None       # ← NEW
         self.date = None
         self.time = None
         self.patient_name = None
@@ -110,24 +114,20 @@ class BookingState:
         self.pending_intent_switch = None
 
     def reset_booking(self):
-        """
-        Reset only booking-related fields.
-        """
+        """Reset booking-related fields only."""
+        self.treatment_key = None       # ← NEW
         self.date = None
         self.time = None
         self.patient_name = None
         self.patient_phone = None
 
     def reset_cancel_reschedule(self):
-        """
-        Reset cancellation / reschedule selection state.
-        """
+        """Reset cancellation / reschedule selection state."""
         self.candidate_appointments = None
         self.selected_appointment_id = None
         self.reschedule_date = None
         self.reschedule_time = None
         self.pending_intent_switch = None
-
 
     def is_done(self) -> bool:
         return self.stage == FlowStage.IDLE

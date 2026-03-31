@@ -142,7 +142,11 @@ def create_appointment(
     appointment_time,
     status,
     calendar_event_id,
+    treatment_key: str = None,  
+    duration_minutes: int = None,
 ):
+    from db.models import Appointment 
+    
     appointment = Appointment(
         doctor_id=doctor_id,
         patient_id=patient_id,
@@ -150,6 +154,8 @@ def create_appointment(
         appointment_time=appointment_time,
         status=status,
         calendar_event_id=calendar_event_id,
+        treatment_key=treatment_key,       
+        duration_minutes=duration_minutes,
     )
     db.add(appointment)
     db.flush()
