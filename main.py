@@ -9,9 +9,9 @@ import base64
 from typing import Dict
 from datetime import time
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Request, HTTPException,Response
+from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse,HTMLResponse, Response, JSONResponse
+from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse, Response, JSONResponse
 from pydantic import BaseModel, EmailStr
 import uuid
 from schema import ChatRequest, ChatResponse, DoctorRescheduleRequest
@@ -19,22 +19,24 @@ from agent import run_agent
 from state import BookingState
 from channel.web import init_session, handle_web_message
 from channel.whatsapp import handle_whatsapp_message, whatsapp_state_store
-from calendar_oauth import get_oauth_flow , build_calendar_service
+from calendar_oauth import get_oauth_flow, build_calendar_service
 from auth_store import oauth_store
 from twilio.twiml.messaging_response import MessagingResponse
 from doctor_config import DOCTORS
 from db.database import SessionLocal
-from db.repository import (create_doctor, doctor_exists, get_doctor_by_slug,get_doctor_by_email, 
+from db.repository import (create_doctor, doctor_exists, get_doctor_by_slug, get_doctor_by_email,
                            get_upcoming_appointments_for_doctor,
-                           get_appointment_by_id, cancel_appointment_db , reschedule_appointment_db,
-                           get_todays_appointments_for_doctor,get_doctor_auth_by_email,update_doctor_last_login, get_doctor_by_id,
-                           get_doctor_auth_by_doctor_id,create_doctor_auth)
-
+                           get_appointment_by_id, cancel_appointment_db, reschedule_appointment_db,
+                           get_todays_appointments_for_doctor, get_doctor_auth_by_email, update_doctor_last_login, get_doctor_by_id,
+                           get_doctor_auth_by_doctor_id, create_doctor_auth)
 
 from tools import cancel_appointment_by_id, check_availability, update_calendar_event
 from email_service import send_daily_appointments_email
-
 from auth_utils import hash_password, verify_password
+
+# ── FIX: moved here from line ~1030 so /ask-dentist can use it ──
+from services.dental_ai_service import get_dental_ai_response
+from fastapi import File, Form, UploadFile
 
 import logging
 
@@ -46,7 +48,6 @@ logging.basicConfig(
 logger = logging.getLogger("medschedule")
 
 
-
 app = FastAPI()
 
 from voice_routes import voice_router
@@ -56,7 +57,6 @@ from call_log_route import call_log_router   # optional, for dashboard
 app.include_router(call_log_router)
 
 doctor_sessions = {}
-
 
 TIMEZONE = "Asia/Kolkata"
 
@@ -88,10 +88,14 @@ def require_doctor(request: Request):
 # Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024  # 4 MB
+
+
 class DentalKnowledgeRequest(BaseModel):
     message: str
- 
- 
+
+
 # ── Route ────────────────────────────────────────────────────────
 @app.post("/ask-dentist")
 async def ask_dentist(payload: DentalKnowledgeRequest):
@@ -103,9 +107,10 @@ async def ask_dentist(payload: DentalKnowledgeRequest):
     """
     if not payload.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
- 
+
     reply = await get_dental_ai_response(user_message=payload.message)
     return JSONResponse({"reply": reply})
+
 
 # 🏠 Homepage route
 @app.get("/")
@@ -114,22 +119,16 @@ def serve_homepage():
     return FileResponse("static/homepage.html")
 
 
-# session_id -> BookingState
-
-
-
 # -------------------------------
 # Doctor resolution helper
 # -------------------------------
 from db.repository import get_doctor_by_slug
 from doctor_config import DOCTORS
 
- 
- 
+
 def normalize_slug(text: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return slug
-
 
 
 def resolve_doctor_or_404(doctor_slug: str):
@@ -160,7 +159,6 @@ def resolve_doctor_or_404(doctor_slug: str):
     raise HTTPException(status_code=404, detail="Doctor not found")
 
 
-
 # -------------------------------
 # Doctor-specific booking URL
 # -------------------------------
@@ -175,9 +173,9 @@ def serve_doctor_ui(doctor_slug: str, request: Request):
         session_id = str(uuid.uuid4())
 
     init_session(
-    session_id=session_id,
-    doctor_id=doctor["id"],
-    doctor_name=doctor["name"]
+        session_id=session_id,
+        doctor_id=doctor["id"],
+        doctor_name=doctor["name"]
     )
 
     with open("static/index.html", "r", encoding="utf-8") as f:
@@ -208,15 +206,12 @@ def chat(req: ChatRequest, request: Request):
             detail="Session missing. Please start booking from the doctor's page."
         )
 
-
     reply = handle_web_message(
         session_id=session_id,
         user_message=req.message
     )
-        
+
     return ChatResponse(reply=reply)
-
-
 
 
 # -------------------------------
@@ -240,7 +235,6 @@ def connect_calendar(doctor_slug: str):
     oauth_store["pending_doctor"] = str(doctor.doctor_id)
 
     return RedirectResponse(auth_url)
-
 
 
 # -------------------------------
@@ -335,7 +329,6 @@ def oauth_callback(request: Request):
     )
 
 
-
 # -------------------------------
 # Doctor onboarding
 # -------------------------------
@@ -353,14 +346,9 @@ class DoctorOnboardRequest(BaseModel):
     buffer_minutes: int
 
 
-
-
 class DoctorSignupRequest(BaseModel):
     doctor_id: str
     password: str
-
-
-
 
 
 @app.get("/doctors/onboard")
@@ -383,17 +371,15 @@ def onboard_doctor(payload: DoctorOnboardRequest):
             status_code=400,
             detail=f"Doctor slug '{slug}' already exists"
         )
-    
+
     if get_doctor_by_email(payload.email):
         raise HTTPException(
-        status_code=400,
-        detail=f"Doctor with email '{payload.email}' already exists"
-    )
+            status_code=400,
+            detail=f"Doctor with email '{payload.email}' already exists"
+        )
 
     doctor_whatsapp = normalize_phone(payload.doctor_whatsapp_number)
     clinic_phone = normalize_phone(payload.clinic_phone_number)
-
-
 
     doctor = create_doctor(
         name=payload.name,
@@ -410,14 +396,11 @@ def onboard_doctor(payload: DoctorOnboardRequest):
     )
 
     return {
-    "doctor_id": str(doctor.doctor_id),
-    "slug": doctor.slug,
-    "connect_calendar_url": f"/connect-calendar/{doctor.slug}",
-    "message": "Doctor onboarded successfully"
+        "doctor_id": str(doctor.doctor_id),
+        "slug": doctor.slug,
+        "connect_calendar_url": f"/connect-calendar/{doctor.slug}",
+        "message": "Doctor onboarded successfully"
     }
-
-
-
 
 
 @app.get("/doctor/{doctor_id}/appointments")
@@ -443,39 +426,15 @@ def list_doctor_appointments(
     ]
 
 
-
-
 @app.post("/doctor/{doctor_id}/appointments/{appointment_id}/cancel")
 def doctor_cancel_appointment(
     doctor_id: str,
     appointment_id: str
 ):
-    
     raise HTTPException(
-    status_code=410,
-    detail="This endpoint is deprecated. Use doctor dashboard APIs."
-)
-
-    appt = get_appointment_by_id(appointment_id)
-    if not appt:
-        raise HTTPException(status_code=404, detail="Appointment not found")
-
-    if str(appt.doctor_id) != doctor_id:
-        raise HTTPException(
-            status_code=403,
-            detail="Cannot cancel another doctor's appointment"
-        )
-
-    cancel_appointment_db(appointment_id)
-
-    if appt.calendar_event_id:
-        cancel_appointment(
-            event_id=appt.calendar_event_id,
-            doctor_id=doctor_id
-        )
-
-    return {"status": "Appointment cancelled successfully"}
-
+        status_code=410,
+        detail="This endpoint is deprecated. Use doctor dashboard APIs."
+    )
 
 
 @app.post("/doctor/{doctor_id}/appointments/{appointment_id}/reschedule")
@@ -484,327 +443,90 @@ def doctor_reschedule_appointment(
     appointment_id: str,
     payload: DoctorRescheduleRequest
 ):
-    
     raise HTTPException(
-    status_code=410,
-    detail="This endpoint is deprecated. Use doctor dashboard APIs."
-)
-
-    appt = get_appointment_by_id(appointment_id)
-    if not appt:
-        raise HTTPException(status_code=404, detail="Appointment not found")
-
-    if str(appt.doctor_id) != doctor_id:
-        raise HTTPException(
-            status_code=403,
-            detail="Cannot reschedule another doctor's appointment"
-        )
-
-    date_str = payload.new_date.isoformat()
-    time_str = payload.new_time.strftime("%H:%M")
-
-    if not check_availability(date_str, time_str, doctor_id):
-        raise HTTPException(
-            status_code=400,
-            detail="Selected slot is not available"
-        )
-
-    reschedule_appointment_db(
-        appointment_id=appointment_id,
-        new_date=payload.new_date,
-        new_time=payload.new_time,
-        new_calendar_event_id=appt.calendar_event_id
+        status_code=410,
+        detail="This endpoint is deprecated. Use doctor dashboard APIs."
     )
-
-    if appt.calendar_event_id:
-        from tools import get_credentials_for_doctor, get_calendar_id_for_doctor
-        credentials = get_credentials_for_doctor(doctor_id)
-
-        if credentials:
-            service = build_calendar_service(credentials)
-            tz = pytz.timezone(TIMEZONE)
-
-            start_dt = tz.localize(
-                datetime.combine(payload.new_date, payload.new_time)
-            )
-
-            end_dt = start_dt + timedelta(minutes=appt.doctor.avg_consult_minutes)
-
-            service.events().patch(
-                calendarId=get_calendar_id_for_doctor(doctor_id),
-                eventId=appt.calendar_event_id,
-                body={
-                    "start": {
-                        "dateTime": start_dt.isoformat(),
-                        "timeZone": TIMEZONE
-                    },
-                    "end": {
-                        "dateTime": end_dt.isoformat(),
-                        "timeZone": TIMEZONE
-                    },
-                }
-            ).execute()
-
-    return {"status": "Appointment rescheduled successfully"}
-
-
-
-@app.post("/internal/send-daily-emails")
-def send_daily_emails():
-    from db.database import SessionLocal
-    from db.models import Doctor
-
-    db = SessionLocal()
-    doctors = db.query(Doctor).filter(Doctor.is_active == True).all()
-
-    for d in doctors:
-        if not d.clinic_email:
-            continue
-
-        appointments = get_todays_appointments_for_doctor(d.doctor_id)
-        send_daily_appointments_email(
-            clinic_email=d.clinic_email,
-            doctor_name=d.name,
-            appointments=appointments
-        )
-
-    return {"status": "Emails processed"}
-
-
-
-from pydantic import BaseModel
-
-class DoctorLoginRequest(BaseModel):
-    email: EmailStr
-    password: str
 
 
 @app.post("/auth/doctor/login")
-def doctor_login(payload: DoctorLoginRequest, response: Response):
-    auth = get_doctor_auth_by_email(payload.email)
-    if not auth:
+def doctor_login(payload: dict, request: Request, response: Response):
+    from auth_utils import verify_password
+    email = payload.get("email", "").strip().lower()
+    password = payload.get("password", "")
+
+    auth = get_doctor_auth_by_email(email)
+    if not auth or not verify_password(password, auth.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if not verify_password(payload.password, auth.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    update_doctor_last_login(auth.doctor_id)
 
     session_id = str(uuid.uuid4())
-    doctor_sessions[session_id] = auth.doctor_id
+    doctor_sessions[session_id] = str(auth.doctor_id)
 
-    update_doctor_last_login(auth.id)
-
-    response.set_cookie(
+    resp = JSONResponse({"status": "ok"})
+    resp.set_cookie(
         key="doctor_session",
         value=session_id,
         httponly=True,
-        samesite="lax"
+        samesite="lax",
     )
-
-    return {"status": "logged_in"}
-
+    return resp
 
 
 @app.post("/auth/doctor/logout")
 def doctor_logout(request: Request, response: Response):
     session_id = request.cookies.get("doctor_session")
-    if session_id:
-        doctor_sessions.pop(session_id, None)
+    if session_id and session_id in doctor_sessions:
+        del doctor_sessions[session_id]
+    resp = JSONResponse({"status": "logged_out"})
+    resp.delete_cookie("doctor_session")
+    return resp
 
-    response.delete_cookie("doctor_session")
-    return {"status": "logged_out"}
 
-
-@app.get("/auth/doctor/me")
-def doctor_me(request: Request):
-    session_id = request.cookies.get("doctor_session")
-
-    if not session_id:
-        return JSONResponse(status_code=401, content={"error": "Not logged in"})
-
-    doctor_id = doctor_sessions.get(session_id)
-
-    if not doctor_id:
-        return JSONResponse(status_code=401, content={"error": "Invalid session"})
-
+@app.get("/api/doctor/me")
+def get_doctor_me(request: Request):
+    doctor_id = require_doctor(request)
     db = SessionLocal()
     try:
         doctor = get_doctor_by_id(db, doctor_id)
-        if not doctor:
-            return JSONResponse(status_code=404, content={"error": "Doctor not found"})
+    finally:
+        db.close()
+    if not doctor:
+        raise HTTPException(status_code=404, detail="Doctor not found")
+    return {
+        "doctor_id": str(doctor.doctor_id),
+        "name": doctor.name,
+        "email": doctor.email,
+        "slug": doctor.slug,
+        "working_days": doctor.working_days,
+        "work_start_time": str(doctor.work_start_time),
+        "work_end_time": str(doctor.work_end_time),
+        "avg_consult_minutes": doctor.avg_consult_minutes,
+    }
 
-        return {
-            "doctor_id": doctor.doctor_id,
-            "name": doctor.name,
-            "email": doctor.email,
+
+@app.get("/api/doctor/appointments/today")
+def get_todays_appointments(request: Request):
+    doctor_id = require_doctor(request)
+    appointments = get_todays_appointments_for_doctor(doctor_id)
+    return [
+        {
+            "appointment_id": str(a.appointment_id),
+            "date": a.appointment_date.isoformat(),
+            "time": a.appointment_time.strftime("%H:%M"),
+            "status": a.status,
+            "patient_name": a.patient.name if a.patient else None,
+            "patient_phone": a.patient.phone if a.patient else None,
         }
-    finally:
-        db.close()
+        for a in appointments
+    ]
 
 
-
-@app.post("/api/doctor/appointments/{appointment_id}/cancel")
-def cancel_appointment_secure(
-    appointment_id: str,
-    request: Request
-):
-    
-    
-    # 1️⃣ Identify logged-in doctor (SESSION BASED)
+@app.get("/api/doctor/appointments/upcoming")
+def get_upcoming_appointments(request: Request, limit: int = 50):
     doctor_id = require_doctor(request)
-
-    # 2️⃣ Fetch appointment
-    appt = get_appointment_by_id(appointment_id)
-    if not appt:
-        raise HTTPException(status_code=404, detail="Appointment not found")
-
-    # ✅ ADD THIS BLOCK HERE
-    if appt.status == "CANCELLED":
-        raise HTTPException(
-            status_code=400,
-            detail="Appointment already cancelled"
-        )
-
-
-    # 3️⃣ Authorization check (CRITICAL)
-    if appt.doctor_id != doctor_id:
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    cancel_appointment_by_id(
-    appointment_id=appointment_id,
-    doctor_id=doctor_id
-    )
-
-
-    print(
-    f"[AUDIT] doctor={doctor_id} "
-    f"action=cancel "
-    f"appointment={appointment_id}"
-)
-    
-
-    return {"status": "cancelled"}
-
-
-
-from tools import is_working_day, check_availability
-
-@app.post("/api/doctor/appointments/{appointment_id}/reschedule")
-def reschedule_appointment_secure(
-    appointment_id: str,
-    payload: DoctorRescheduleRequest,
-    request: Request
-):
-    # 1️⃣ Identify logged-in doctor
-    doctor_id = require_doctor(request)
-
-    # 2️⃣ Fetch appointment
-    appt = get_appointment_by_id(appointment_id)
-    if not appt:
-        raise HTTPException(status_code=404, detail="Appointment not found")
-
-    # 3️⃣ Status guard
-    if appt.status != "BOOKED":
-        raise HTTPException(
-            status_code=400,
-            detail="Only booked appointments can be rescheduled"
-        )
-
-    # 4️⃣ Authorization
-    if appt.doctor_id != doctor_id:
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    # 5️⃣ Invariant guard
-    if not appt.calendar_event_id:
-        raise HTTPException(
-            status_code=500,
-            detail="Invariant violation: booked appointment missing calendar event"
-        )
-
-    # ---------------------------
-    # 🔒 STRICT VALIDATIONS BEGIN
-    # ---------------------------
-
-    # 6️⃣ Working day validation
-    if not is_working_day(str(payload.new_date), doctor_id):
-        raise HTTPException(
-            status_code=400,
-            detail="Doctor is not available on the selected day"
-        )
-#
-    # 7️⃣ Working hour validation
-    db = SessionLocal()
-    try:
-        doctor = get_doctor_by_id(db, doctor_id)
-    finally:
-        db.close()
-
-    new_time = payload.new_time
-
-    if not (doctor.work_start_time <= new_time < doctor.work_end_time):
-        raise HTTPException(
-            status_code=400,
-            detail="Selected time is outside doctor's working hours"
-        )
-
-    # 8️⃣ Availability check (exclude current appointment)
-    if not check_availability(
-        str(payload.new_date),
-        new_time.strftime("%H:%M"),
-        doctor_id,
-        exclude_appointment_id=appointment_id
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Selected slot is already booked"
-        )
-
-    # ---------------------------
-    # ✅ SIDE-EFFECT FIRST
-    # ---------------------------
-
-    try:
-        update_calendar_event(
-            doctor_id=doctor_id,
-            event_id=appt.calendar_event_id,
-            new_date=str(payload.new_date),
-            new_time=new_time.strftime("%H:%M"),
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=502,
-            detail="Failed to update calendar event"
-        )
-
-    # ---------------------------
-    # ✅ STATE UPDATE (IDENTITY PRESERVED)
-    # ---------------------------
-
-    reschedule_appointment_db(
-        appointment_id=appointment_id,
-        new_date=payload.new_date,
-        new_time=new_time,
-        new_calendar_event_id=appt.calendar_event_id
-    )
-
-    print(
-        f"[AUDIT] doctor={doctor_id} "
-        f"action=reschedule "
-        f"appointment={appointment_id} "
-        f"new_date={payload.new_date} "
-        f"new_time={new_time}"
-    )
-
-    return {"status": "rescheduled"}
-
-
-
-
-@app.get("/api/doctor/appointments")
-def list_doctor_appointments(request: Request):
-    doctor_id = require_doctor(request)
-
-    appointments = get_upcoming_appointments_for_doctor(doctor_id)
-
+    appointments = get_upcoming_appointments_for_doctor(doctor_id, limit=limit)
     return [
         {
             "appointment_id": str(a.appointment_id),
@@ -826,7 +548,7 @@ def doctor_signup(payload: DoctorSignupRequest):
         doctor = get_doctor_by_id(db, payload.doctor_id)
     finally:
         db.close()
-        
+
     if not doctor:
         raise HTTPException(
             status_code=400,
@@ -856,6 +578,7 @@ def doctor_signup(payload: DoctorSignupRequest):
 
 from fastapi import BackgroundTasks
 
+
 @app.post("/whatsapp/webhook")
 async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     try:
@@ -869,8 +592,6 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
             f"Incoming message | from={from_number} | to={to_number} | body='{body}'"
         )
 
-
-        # 🔥 Add background task (do not process inline)
         background_tasks.add_task(
             process_whatsapp_message,
             from_number,
@@ -881,8 +602,6 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     except Exception as e:
         logger.exception("Webhook error occurred")
 
-
-    # 🚀 Immediate ACK (critical)
     return Response(status_code=200)
 
 
@@ -913,7 +632,6 @@ def generate_whatsapp_qr(platform_number: str, doctor_id: str):
     }
 
 
-
 @app.get("/api/doctor/whatsapp-qr")
 def get_doctor_whatsapp_qr(request: Request):
     session_id = request.cookies.get("doctor_session")
@@ -937,18 +655,18 @@ def get_doctor_whatsapp_qr(request: Request):
     PLATFORM_WHATSAPP_NUMBER = "+14155238886"
 
     return generate_whatsapp_qr(
-    PLATFORM_WHATSAPP_NUMBER,
-    doctor.doctor_id
-)
+        PLATFORM_WHATSAPP_NUMBER,
+        doctor.doctor_id
+    )
 
 
-import os
-from twilio.rest import Client
+import time as time_module
 
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")
 
+from twilio.rest import Client
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 
@@ -965,14 +683,8 @@ def test_whatsapp():
         return {"error": str(e)}
 
 
-import time
-import logging
-
-logger = logging.getLogger("medschedule")
-
-
 def process_whatsapp_message(from_number, to_number, body):
-    start_time = time.time()
+    start_time = time_module.time()
 
     try:
         logger.info(
@@ -985,7 +697,7 @@ def process_whatsapp_message(from_number, to_number, body):
             message_body=body
         )
 
-        duration = round(time.time() - start_time, 3)
+        duration = round(time_module.time() - start_time, 3)
 
         logger.info(
             f"Reply generated | from={from_number} | duration={duration}s"
@@ -1024,16 +736,7 @@ def process_whatsapp_message(from_number, to_number, body):
 # -----------------------------------------------
 # Dental AI Triage Chat  (homepage floating bot)
 # Supports text-only AND image + text queries.
-# Completely separate from /chat booking endpoint.
-# No session cookie required — public, stateless.
 # -----------------------------------------------
-from services.dental_ai_service import get_dental_ai_response
-from fastapi import File, Form, UploadFile
-
-ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
-MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024  # 4 MB
-
-
 @app.post("/dental-chat")
 async def dental_chat(
     message: str = Form(default=""),
@@ -1044,10 +747,7 @@ async def dental_chat(
     Accepts multipart/form-data with:
       - message  (str, optional if image is sent)
       - image    (file, optional — jpg/png/webp/gif, max 4 MB)
-
-    Does NOT affect the booking bot (/chat) in any way.
     """
-    # ── Validate input ─────────────────────────────────────────────
     if not message.strip() and image is None:
         raise HTTPException(status_code=400, detail="Please provide a message or an image.")
 
@@ -1055,7 +755,6 @@ async def dental_chat(
     image_content_type = "image/jpeg"
 
     if image is not None:
-        # Content-type check
         if image.content_type not in ALLOWED_IMAGE_TYPES:
             raise HTTPException(
                 status_code=400,
@@ -1064,7 +763,6 @@ async def dental_chat(
 
         image_bytes = await image.read()
 
-        # Size check
         if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
             raise HTTPException(
                 status_code=413,
@@ -1076,7 +774,6 @@ async def dental_chat(
             f"Dental chat image received | type={image.content_type} | size={len(image_bytes)} bytes"
         )
 
-    # ── Call AI service ────────────────────────────────────────────
     reply = await get_dental_ai_response(
         user_message=message,
         image_bytes=image_bytes,

@@ -225,6 +225,10 @@ def run_agent(user_message: str, state: BookingState) -> str:
             else:
                 state.stage = FlowStage.BOOK_TREATMENT  # ask for treatment
 
+        elif state.intent == "CANCEL":
+            # ── FIX: was missing — CANCEL never advanced past IDLE ──
+            state.stage = FlowStage.CANCEL_PHONE
+
         elif state.intent == "RESCHEDULE":
             state.stage = FlowStage.RESCHEDULE_SELECT
 
@@ -356,8 +360,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
             state.selected_appointment_id = chosen.appointment_id
             state.stage = FlowStage.CANCEL_CONFIRM
             return (
-                f"You have selected the appointment on "
-                f"{chosen.appointment_date} at "
+                f"You have selected: {chosen.appointment_date} at "
                 f"{chosen.appointment_time.strftime('%H:%M')}.\n"
                 "Do you want to cancel it? (yes / no)"
             )
@@ -367,87 +370,80 @@ def run_agent(user_message: str, state: BookingState) -> str:
     # ─────────────────────────────────────────────────────────────
     elif state.intent == "RESCHEDULE":
 
-        if state.stage == FlowStage.RESCHEDULE_SELECT:
-            if state.candidate_appointments is None:
-                phone = re.sub(r"\D", "", msg)
-                if len(phone) != 10:
-                    return "Please share the 10-digit number used for booking."
+        if not state._reschedule_initialized:
+            state._reschedule_initialized = True
 
-                appts = get_active_appointments_by_phone(phone=phone, doctor_id=doctor_id)
+        if state.stage == FlowStage.RESCHEDULE_SELECT:
+            if not state.patient_phone:
+                digits = re.sub(r"\D", "", msg)
+                if len(digits) == 10:
+                    state.patient_phone = digits
+                else:
+                    return "Please tell me the phone number used while booking."
+
+            if state.candidate_appointments is None:
+                appts = get_active_appointments_by_phone(phone=state.patient_phone, doctor_id=doctor_id)
                 if not appts:
                     state.reset_flow()
-                    return "❌ No active appointments found for this number."
+                    return "You don't have any active appointments."
 
                 state.candidate_appointments = appts
 
                 if len(appts) == 1:
-                    chosen = appts[0]
-                    IST = pytz.timezone("Asia/Kolkata")
-                    now  = datetime.now(IST)
-                    appt_datetime = IST.localize(datetime.combine(chosen.appointment_date, chosen.appointment_time))
-                    if appt_datetime - now < timedelta(hours=24):
-                        db = SessionLocal()
-                        try:
-                            doctor = get_doctor_by_id(db, doctor_id)
-                        finally:
-                            db.close()
-                        clinic_phone = doctor.whatsapp_number or "the clinic"
-                        state.reset_flow()
-                        return (
-                            "⚠️ Online rescheduling is not allowed within 24 hours of the appointment.\n\n"
-                            f"📞 Please contact the clinic directly at {clinic_phone}."
-                        )
-                    state.selected_appointment_id = chosen.appointment_id
+                    state.selected_appointment_id = appts[0].appointment_id
                     state.stage = FlowStage.RESCHEDULE_DATE
-                    return "What new date would you like?"
+                    return (
+                        f"Found your appointment on {appts[0].appointment_date} "
+                        f"at {appts[0].appointment_time.strftime('%H:%M')}.\n"
+                        "What new date would you like?"
+                    )
+                else:
+                    lines = ["Here are your active appointments:"]
+                    for i, a in enumerate(appts, 1):
+                        lines.append(f"{i}️⃣ {a.appointment_date} at {a.appointment_time.strftime('%H:%M')}")
+                    lines.append("Which one would you like to reschedule?")
+                    return "\n".join(lines)
 
-                options = "\n".join(
-                    f"{i+1}. {a.appointment_date} at {a.appointment_time.strftime('%H:%M')}"
-                    for i, a in enumerate(appts)
-                )
-                return f"Which appointment would you like to reschedule?\n{options}"
-
-            if state.selected_appointment_id is None:
-                try:
-                    idx    = int(msg.strip()) - 1
-                    chosen = state.candidate_appointments[idx]
-                    IST = pytz.timezone("Asia/Kolkata")
-                    now  = datetime.now(IST)
-                    appt_datetime = IST.localize(datetime.combine(chosen.appointment_date, chosen.appointment_time))
-                    if appt_datetime - now < timedelta(hours=24):
-                        db = SessionLocal()
-                        try:
-                            doctor = get_doctor_by_id(db, doctor_id)
-                        finally:
-                            db.close()
-                        clinic_phone = doctor.whatsapp_number or "the clinic"
-                        state.reset_flow()
-                        return (
-                            "⚠️ Online rescheduling is not allowed within 24 hours of the appointment.\n\n"
-                            f"📞 Please contact the clinic directly at {clinic_phone}."
-                        )
-                    state.selected_appointment_id = chosen.appointment_id
-                    state.stage = FlowStage.RESCHEDULE_DATE
-                    return "What new date would you like?"
-                except Exception:
-                    return "Please reply with the number corresponding to the appointment above."
+            if not state.selected_appointment_id:
+                m = re.search(r"\b(\d+)\b", msg)
+                if not m:
+                    return "Please choose an option number."
+                idx = int(m.group(1)) - 1
+                if not (0 <= idx < len(state.candidate_appointments)):
+                    return "Please choose a valid option number."
+                state.selected_appointment_id = state.candidate_appointments[idx].appointment_id
+                state.stage = FlowStage.RESCHEDULE_DATE
+                return "What new date would you like?"
 
         if state.stage == FlowStage.RESCHEDULE_DATE:
             parsed = normalize_date(msg)
+            IST   = pytz.timezone("Asia/Kolkata")
+            today = datetime.now(IST).date()
+
             if not parsed:
-                return "Sure 🙂 What date would you like to reschedule to?"
+                return "What new date would you like?"
+
+            parsed_date = datetime.strptime(parsed, "%Y-%m-%d").date()
+
+            if parsed_date < today:
+                return "❌ You cannot reschedule to a past date. Please choose a valid date."
+            if parsed_date > today + timedelta(days=7):
+                return "📅 Appointments can only be rescheduled up to 7 days in advance."
             if not is_working_day(parsed, doctor_id):
                 return "❌ The doctor is not available on that date.\nPlease choose another day."
+
             state.reschedule_date = parsed
             state.stage = FlowStage.RESCHEDULE_TIME
-            return "And what time works best for you?"
+            return "What new time would you prefer?"
 
         if state.stage == FlowStage.RESCHEDULE_TIME:
             t, needs_clarification = normalize_time(extracted["time_text"] or msg)
+
             if needs_clarification:
-                return "I didn't catch the time clearly.\nPlease reply like: 3pm or 3:30pm."
+                return "Please specify the exact time (e.g., 3pm)."
             if not t:
-                return "Could you please tell me the preferred time?"
+                return "Could you please specify the exact time?"
+
             if not is_within_clinic_hours(t, doctor_id):
                 db = SessionLocal()
                 try:
@@ -460,19 +456,30 @@ def run_agent(user_message: str, state: BookingState) -> str:
                     f"{doctor.work_start_time.strftime('%H:%M')} to "
                     f"{doctor.work_end_time.strftime('%H:%M')}."
                 )
-            if not check_availability(state.reschedule_date, t, doctor_id, exclude_appointment_id=state.selected_appointment_id):
+
+            if not check_availability(
+                state.reschedule_date, t, doctor_id,
+                exclude_appointment_id=state.selected_appointment_id
+            ):
                 return "❌ That time slot is not available.\nPlease choose a different time."
+
             state.reschedule_time = t
             state.stage = FlowStage.RESCHEDULE_CONFIRM
+            return (
+                f"Please confirm new slot:\n"
+                f"📅 {state.reschedule_date}\n"
+                f"⏰ {state.reschedule_time}\n"
+                f"(yes / no)"
+            )
 
         if state.stage == FlowStage.RESCHEDULE_CONFIRM:
             if msg == "no":
                 state.stage = FlowStage.CHANGE_CHOICE
-                return "What would you like to change?\n1️⃣ Date\n2️⃣ Time\nOr say *start over*"
+                return "What would you like to change?\n1️⃣ Date\n2️⃣ Time"
 
             if msg not in CONTROL_WORDS:
                 return (
-                    f"Please confirm rescheduling to:\n"
+                    f"Please confirm new slot:\n"
                     f"📅 {state.reschedule_date}\n"
                     f"⏰ {state.reschedule_time}\n"
                     f"(yes / no)"
@@ -643,7 +650,7 @@ def run_agent(user_message: str, state: BookingState) -> str:
                     doctor_id,
                     state.patient_name,
                     state.patient_phone,
-                    treatment_key=state.treatment_key,   # ← NEW
+                    treatment_key=state.treatment_key,
                 )
                 logger.info(
                     f"Booking created | doctor_id={doctor_id} | date={state.date} | "
