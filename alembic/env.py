@@ -1,15 +1,20 @@
 from logging.config import fileConfig
 import os
+from dotenv import load_dotenv
 
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
+load_dotenv()
+
 # ---- Alembic Config ----
 config = context.config
+
+db_url = os.environ.get("DATABASE_URL")
+if not db_url:
+    raise RuntimeError("DATABASE_URL is not set. Check your .env file.")
 config.set_main_option(
-    "sqlalchemy.url",
-    os.environ.get("DATABASE_URL")
-)
+    "sqlalchemy.url",db_url)
 
 
 # ---- Logging ----
