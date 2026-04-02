@@ -1,8 +1,4 @@
 import os
-# ── Load .env FIRST — before any module that reads os.getenv() ──
-from dotenv import load_dotenv
-load_dotenv()
-# ────────────────────────────────────────────────────────────────
 from pydoc import html
 import re
 import pytz
@@ -60,41 +56,9 @@ app.include_router(voice_router)
 from call_log_route import call_log_router   # optional, for dashboard
 app.include_router(call_log_router)
 
-doctor_sessions = {}  # session_id -> doctor_id (in-memory cache)
+doctor_sessions = {}
 
 TIMEZONE = "Asia/Kolkata"
-
-# ── Session helpers — survive server restarts via DB fallback ────
-import hashlib
-
-def _session_to_doctor_id(session_id: str):
-    """
-    Check in-memory cache first (fast path).
-    Falls back to DB by verifying the session_id is a deterministic
-    HMAC of doctor_id — so even after a restart the cookie still works.
-    """
-    # 1. In-memory hit
-    if session_id in doctor_sessions:
-        return doctor_sessions[session_id]
-
-    # 2. DB fallback — session_id is sha256(secret + doctor_id)
-    from db.database import SessionLocal as _SL
-    from db.models import DoctorAuth as _DA
-    secret = os.getenv("SESSION_SECRET", "medschedule-default-secret")
-    db = _SL()
-    try:
-        auths = db.query(_DA).filter(_DA.is_active == True).all()
-        for auth in auths:
-            expected = hashlib.sha256(
-                f"{secret}:{auth.doctor_id}".encode()
-            ).hexdigest()
-            if session_id == expected:
-                doctor_id = str(auth.doctor_id)
-                doctor_sessions[session_id] = doctor_id  # re-warm cache
-                return doctor_id
-    finally:
-        db.close()
-    return None
 
 
 def normalize_phone(number: str) -> str:
@@ -115,7 +79,7 @@ def require_doctor(request: Request):
     if not session_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    doctor_id = _session_to_doctor_id(session_id)
+    doctor_id = doctor_sessions.get(session_id)
     if not doctor_id:
         raise HTTPException(status_code=401, detail="Invalid session")
 
@@ -261,17 +225,13 @@ def connect_calendar(doctor_slug: str):
 
     flow = get_oauth_flow()
 
-    # ── FIX: encode doctor_id in the OAuth `state` param so it
-    # survives across server restarts / multiple workers on Render.
-    # We no longer rely on in-memory oauth_store for the flow itself.
-    auth_url, state = flow.authorization_url(
+    auth_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
         prompt="consent",
-        state=str(doctor.doctor_id),   # ← doctor_id travels with OAuth round-trip
     )
 
-    # Still store pending_doctor as belt-and-suspenders fallback
+    oauth_store["flow"] = flow
     oauth_store["pending_doctor"] = str(doctor.doctor_id)
 
     return RedirectResponse(auth_url)
@@ -282,16 +242,19 @@ def connect_calendar(doctor_slug: str):
 # -------------------------------
 @app.get("/oauth/callback")
 def oauth_callback(request: Request):
+    flow = oauth_store.get("flow")
+    if not flow:
+        raise HTTPException(
+            status_code=400,
+            detail="OAuth flow missing. Please reconnect calendar."
+        )
+
     redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
     if not redirect_uri:
         raise HTTPException(
             status_code=500,
             detail="GOOGLE_REDIRECT_URI not set"
         )
-
-    # ── FIX: Reconstruct flow fresh from env vars — no in-memory store needed.
-    # This works regardless of server restarts or multiple Render workers.
-    flow = get_oauth_flow()
 
     auth_response = f"{redirect_uri}?{request.query_params}"
 
@@ -303,11 +266,7 @@ def oauth_callback(request: Request):
             detail=f"OAuth failed: {str(e)}"
         )
 
-    # ── FIX: Read doctor_id from the `state` param Google echoes back.
-    # Falls back to the in-memory store for local dev compatibility.
-    doctor_id = str(request.query_params.get("state", "")).strip()
-    if not doctor_id:
-        doctor_id = oauth_store.get("pending_doctor", "")
+    doctor_id = oauth_store.get("pending_doctor")
     if not doctor_id:
         raise HTTPException(
             status_code=400,
@@ -490,69 +449,6 @@ def doctor_reschedule_appointment(
     )
 
 
-# ── Dashboard appointment endpoints ─────────────────────────────
-
-@app.get("/api/doctor/appointments")
-def get_all_appointments(request: Request, limit: int = 100):
-    """Used by the doctor dashboard appointments tab."""
-    import uuid as _uuid
-    doctor_id = require_doctor(request)
-    appointments = get_upcoming_appointments_for_doctor(
-        _uuid.UUID(str(doctor_id)), limit=limit
-    )
-    return [
-        {
-            "appointment_id": str(a.appointment_id),
-            "date": a.appointment_date.isoformat(),
-            "time": a.appointment_time.strftime("%H:%M"),
-            "status": a.status,
-            "patient_name": a.patient.name if a.patient else None,
-            "patient_phone": a.patient.phone if a.patient else None,
-        }
-        for a in appointments
-    ]
-
-
-@app.post("/api/doctor/appointments/{appointment_id}/cancel")
-def dashboard_cancel_appointment(appointment_id: str, request: Request):
-    """Cancel from doctor dashboard."""
-    doctor_id = require_doctor(request)
-    appt = get_appointment_by_id(appointment_id)
-    if not appt:
-        raise HTTPException(status_code=404, detail="Appointment not found")
-    if str(appt.doctor_id) != str(doctor_id):
-        raise HTTPException(status_code=403, detail="Not your appointment")
-    try:
-        cancel_appointment_by_id(appointment_id, doctor_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    return {"status": "cancelled"}
-
-
-@app.post("/api/doctor/appointments/{appointment_id}/reschedule")
-def dashboard_reschedule_appointment(
-    appointment_id: str,
-    payload: DoctorRescheduleRequest,
-    request: Request,
-):
-    """Reschedule from doctor dashboard."""
-    import uuid as _uuid
-    from db.repository import reschedule_appointment_db
-    doctor_id = require_doctor(request)
-    appt = get_appointment_by_id(appointment_id)
-    if not appt:
-        raise HTTPException(status_code=404, detail="Appointment not found")
-    if str(appt.doctor_id) != str(doctor_id):
-        raise HTTPException(status_code=403, detail="Not your appointment")
-    reschedule_appointment_db(
-        appointment_id=appointment_id,
-        new_date=payload.new_date,
-        new_time=payload.new_time,
-        new_calendar_event_id=appt.calendar_event_id,
-    )
-    return {"status": "rescheduled"}
-
-
 @app.post("/auth/doctor/login")
 def doctor_login(payload: dict, request: Request, response: Response):
     from auth_utils import verify_password
@@ -563,16 +459,9 @@ def doctor_login(payload: dict, request: Request, response: Response):
     if not auth or not verify_password(password, auth.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    update_doctor_last_login(auth.id)  # auth.id is the DoctorAuth PK
+    update_doctor_last_login(auth.doctor_id)
 
-    # Deterministic session_id = sha256(secret + doctor_id)
-    # This means the same doctor always gets the same session token,
-    # so their cookie keeps working after server restarts.
-    import hashlib
-    secret = os.getenv("SESSION_SECRET", "medschedule-default-secret")
-    session_id = hashlib.sha256(
-        f"{secret}:{auth.doctor_id}".encode()
-    ).hexdigest()
+    session_id = str(uuid.uuid4())
     doctor_sessions[session_id] = str(auth.doctor_id)
 
     resp = JSONResponse({"status": "ok"})
@@ -621,8 +510,7 @@ def get_doctor_me(request: Request):
 @app.get("/api/doctor/appointments/today")
 def get_todays_appointments(request: Request):
     doctor_id = require_doctor(request)
-    import uuid as _uuid
-    appointments = get_todays_appointments_for_doctor(_uuid.UUID(str(doctor_id)))
+    appointments = get_todays_appointments_for_doctor(doctor_id)
     return [
         {
             "appointment_id": str(a.appointment_id),
@@ -639,8 +527,7 @@ def get_todays_appointments(request: Request):
 @app.get("/api/doctor/appointments/upcoming")
 def get_upcoming_appointments(request: Request, limit: int = 50):
     doctor_id = require_doctor(request)
-    import uuid as _uuid
-    appointments = get_upcoming_appointments_for_doctor(_uuid.UUID(str(doctor_id)), limit=limit)
+    appointments = get_upcoming_appointments_for_doctor(doctor_id, limit=limit)
     return [
         {
             "appointment_id": str(a.appointment_id),
@@ -748,17 +635,30 @@ def generate_whatsapp_qr(platform_number: str, doctor_id: str):
 
 @app.get("/api/doctor/whatsapp-qr")
 def get_doctor_whatsapp_qr(request: Request):
-    import uuid as _uuid
-    doctor_id = require_doctor(request)   # use require_doctor, not raw cookie
+    session_id = request.cookies.get("doctor_session")
+    doctor_id = doctor_sessions.get(session_id)
+
+    if not doctor_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
     db = SessionLocal()
     try:
-        doctor = get_doctor_by_id(db, _uuid.UUID(str(doctor_id)))
+        doctor = get_doctor_by_id(db, doctor_id)
     finally:
         db.close()
+
     if not doctor:
-        raise HTTPException(status_code=400, detail="Doctor not found.")
+        raise HTTPException(
+            status_code=400,
+            detail="Doctor not found."
+        )
+
     PLATFORM_WHATSAPP_NUMBER = "+14155238886"
-    return generate_whatsapp_qr(PLATFORM_WHATSAPP_NUMBER, str(doctor.doctor_id))
+
+    return generate_whatsapp_qr(
+        PLATFORM_WHATSAPP_NUMBER,
+        doctor.doctor_id
+    )
 
 
 import time as time_module
