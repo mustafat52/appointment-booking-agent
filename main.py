@@ -459,7 +459,7 @@ def doctor_login(payload: dict, request: Request, response: Response):
     if not auth or not verify_password(password, auth.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    update_doctor_last_login(auth.doctor_id)
+    update_doctor_last_login(auth.id)
 
     session_id = str(uuid.uuid4())
     doctor_sessions[session_id] = str(auth.doctor_id)

@@ -1,3 +1,4 @@
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.orm import Session
 from sqlalchemy import select, desc, func
 from datetime import date, time, datetime
@@ -186,7 +187,8 @@ def cancel_appointment_db(appointment_id) -> None:
         db.commit()
 
         # 🔹 Explicitly fetch doctor
-        doctor = get_doctor_by_id(appt.doctor_id)
+        # Replace line 189 in cancel_appointment_db:
+        doctor = get_doctor_by_id(db, appt.doctor_id)
 
         # 🔔 Doctor Notification (Cancel)
         try:
@@ -194,7 +196,7 @@ def cancel_appointment_db(appointment_id) -> None:
                 doctor=doctor,
                 message=(
                     f"❌ Appointment Cancelled\n\n"
-                    f"Patient: {appt.patient_name}\n"
+                    f"Patient: {appt.patient.name if appt.patient else 'Unknown'}\n"
                     f"Date: {appt.appointment_date}\n"
                     f"Time: {appt.appointment_time.strftime('%H:%M')}"
                 )
@@ -237,10 +239,10 @@ def reschedule_appointment_db(
         # 🔔 Doctor Notification (Reschedule)
         try:
             notify_doctor_via_whatsapp(
-                doctor = get_doctor_by_id(appt.doctor_id),
+                doctor = get_doctor_by_id(db, appt.doctor_id),
                 message=(
                     f"🔁 Appointment Rescheduled\n\n"
-                    f"Patient: {appt.patient_name}\n"
+                    f"Patient: {appt.patient.name if appt.patient else 'Unknown'}\n"
                     f"Old: {old_date} – {old_time}\n"
                     f"New: {appt.appointment_date} – "
                     f"{appt.appointment_time.strftime('%H:%M')}"
