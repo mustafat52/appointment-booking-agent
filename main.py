@@ -490,6 +490,69 @@ def doctor_reschedule_appointment(
     )
 
 
+# ── Dashboard appointment endpoints ─────────────────────────────
+
+@app.get("/api/doctor/appointments")
+def get_all_appointments(request: Request, limit: int = 100):
+    """Used by the doctor dashboard appointments tab."""
+    import uuid as _uuid
+    doctor_id = require_doctor(request)
+    appointments = get_upcoming_appointments_for_doctor(
+        _uuid.UUID(str(doctor_id)), limit=limit
+    )
+    return [
+        {
+            "appointment_id": str(a.appointment_id),
+            "date": a.appointment_date.isoformat(),
+            "time": a.appointment_time.strftime("%H:%M"),
+            "status": a.status,
+            "patient_name": a.patient.name if a.patient else None,
+            "patient_phone": a.patient.phone if a.patient else None,
+        }
+        for a in appointments
+    ]
+
+
+@app.post("/api/doctor/appointments/{appointment_id}/cancel")
+def dashboard_cancel_appointment(appointment_id: str, request: Request):
+    """Cancel from doctor dashboard."""
+    doctor_id = require_doctor(request)
+    appt = get_appointment_by_id(appointment_id)
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    if str(appt.doctor_id) != str(doctor_id):
+        raise HTTPException(status_code=403, detail="Not your appointment")
+    try:
+        cancel_appointment_by_id(appointment_id, doctor_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"status": "cancelled"}
+
+
+@app.post("/api/doctor/appointments/{appointment_id}/reschedule")
+def dashboard_reschedule_appointment(
+    appointment_id: str,
+    payload: DoctorRescheduleRequest,
+    request: Request,
+):
+    """Reschedule from doctor dashboard."""
+    import uuid as _uuid
+    from db.repository import reschedule_appointment_db
+    doctor_id = require_doctor(request)
+    appt = get_appointment_by_id(appointment_id)
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    if str(appt.doctor_id) != str(doctor_id):
+        raise HTTPException(status_code=403, detail="Not your appointment")
+    reschedule_appointment_db(
+        appointment_id=appointment_id,
+        new_date=payload.new_date,
+        new_time=payload.new_time,
+        new_calendar_event_id=appt.calendar_event_id,
+    )
+    return {"status": "rescheduled"}
+
+
 @app.post("/auth/doctor/login")
 def doctor_login(payload: dict, request: Request, response: Response):
     from auth_utils import verify_password
@@ -500,7 +563,7 @@ def doctor_login(payload: dict, request: Request, response: Response):
     if not auth or not verify_password(password, auth.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    update_doctor_last_login(auth.doctor_id)
+    update_doctor_last_login(auth.id)  # auth.id is the DoctorAuth PK
 
     # Deterministic session_id = sha256(secret + doctor_id)
     # This means the same doctor always gets the same session token,
@@ -534,10 +597,11 @@ def doctor_logout(request: Request, response: Response):
 
 @app.get("/api/doctor/me")
 def get_doctor_me(request: Request):
+    import uuid as _uuid
     doctor_id = require_doctor(request)
     db = SessionLocal()
     try:
-        doctor = get_doctor_by_id(db, doctor_id)
+        doctor = get_doctor_by_id(db, _uuid.UUID(str(doctor_id)))
     finally:
         db.close()
     if not doctor:
@@ -557,7 +621,8 @@ def get_doctor_me(request: Request):
 @app.get("/api/doctor/appointments/today")
 def get_todays_appointments(request: Request):
     doctor_id = require_doctor(request)
-    appointments = get_todays_appointments_for_doctor(doctor_id)
+    import uuid as _uuid
+    appointments = get_todays_appointments_for_doctor(_uuid.UUID(str(doctor_id)))
     return [
         {
             "appointment_id": str(a.appointment_id),
@@ -574,7 +639,8 @@ def get_todays_appointments(request: Request):
 @app.get("/api/doctor/appointments/upcoming")
 def get_upcoming_appointments(request: Request, limit: int = 50):
     doctor_id = require_doctor(request)
-    appointments = get_upcoming_appointments_for_doctor(doctor_id, limit=limit)
+    import uuid as _uuid
+    appointments = get_upcoming_appointments_for_doctor(_uuid.UUID(str(doctor_id)), limit=limit)
     return [
         {
             "appointment_id": str(a.appointment_id),
@@ -682,30 +748,17 @@ def generate_whatsapp_qr(platform_number: str, doctor_id: str):
 
 @app.get("/api/doctor/whatsapp-qr")
 def get_doctor_whatsapp_qr(request: Request):
-    session_id = request.cookies.get("doctor_session")
-    doctor_id = doctor_sessions.get(session_id)
-
-    if not doctor_id:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
+    import uuid as _uuid
+    doctor_id = require_doctor(request)   # use require_doctor, not raw cookie
     db = SessionLocal()
     try:
-        doctor = get_doctor_by_id(db, doctor_id)
+        doctor = get_doctor_by_id(db, _uuid.UUID(str(doctor_id)))
     finally:
         db.close()
-
     if not doctor:
-        raise HTTPException(
-            status_code=400,
-            detail="Doctor not found."
-        )
-
+        raise HTTPException(status_code=400, detail="Doctor not found.")
     PLATFORM_WHATSAPP_NUMBER = "+14155238886"
-
-    return generate_whatsapp_qr(
-        PLATFORM_WHATSAPP_NUMBER,
-        doctor.doctor_id
-    )
+    return generate_whatsapp_qr(PLATFORM_WHATSAPP_NUMBER, str(doctor.doctor_id))
 
 
 import time as time_module
