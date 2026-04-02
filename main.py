@@ -1,6 +1,8 @@
+import os
+# ── Load .env FIRST — before any module that reads os.getenv() ──
 from dotenv import load_dotenv
 load_dotenv()
-import os
+# ────────────────────────────────────────────────────────────────
 from pydoc import html
 import re
 import pytz
@@ -58,9 +60,41 @@ app.include_router(voice_router)
 from call_log_route import call_log_router   # optional, for dashboard
 app.include_router(call_log_router)
 
-doctor_sessions = {}
+doctor_sessions = {}  # session_id -> doctor_id (in-memory cache)
 
 TIMEZONE = "Asia/Kolkata"
+
+# ── Session helpers — survive server restarts via DB fallback ────
+import hashlib
+
+def _session_to_doctor_id(session_id: str):
+    """
+    Check in-memory cache first (fast path).
+    Falls back to DB by verifying the session_id is a deterministic
+    HMAC of doctor_id — so even after a restart the cookie still works.
+    """
+    # 1. In-memory hit
+    if session_id in doctor_sessions:
+        return doctor_sessions[session_id]
+
+    # 2. DB fallback — session_id is sha256(secret + doctor_id)
+    from db.database import SessionLocal as _SL
+    from db.models import DoctorAuth as _DA
+    secret = os.getenv("SESSION_SECRET", "medschedule-default-secret")
+    db = _SL()
+    try:
+        auths = db.query(_DA).filter(_DA.is_active == True).all()
+        for auth in auths:
+            expected = hashlib.sha256(
+                f"{secret}:{auth.doctor_id}".encode()
+            ).hexdigest()
+            if session_id == expected:
+                doctor_id = str(auth.doctor_id)
+                doctor_sessions[session_id] = doctor_id  # re-warm cache
+                return doctor_id
+    finally:
+        db.close()
+    return None
 
 
 def normalize_phone(number: str) -> str:
@@ -81,7 +115,7 @@ def require_doctor(request: Request):
     if not session_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    doctor_id = doctor_sessions.get(session_id)
+    doctor_id = _session_to_doctor_id(session_id)
     if not doctor_id:
         raise HTTPException(status_code=401, detail="Invalid session")
 
@@ -227,13 +261,17 @@ def connect_calendar(doctor_slug: str):
 
     flow = get_oauth_flow()
 
-    auth_url, _ = flow.authorization_url(
+    # ── FIX: encode doctor_id in the OAuth `state` param so it
+    # survives across server restarts / multiple workers on Render.
+    # We no longer rely on in-memory oauth_store for the flow itself.
+    auth_url, state = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
         prompt="consent",
+        state=str(doctor.doctor_id),   # ← doctor_id travels with OAuth round-trip
     )
 
-    oauth_store["flow"] = flow
+    # Still store pending_doctor as belt-and-suspenders fallback
     oauth_store["pending_doctor"] = str(doctor.doctor_id)
 
     return RedirectResponse(auth_url)
@@ -244,19 +282,16 @@ def connect_calendar(doctor_slug: str):
 # -------------------------------
 @app.get("/oauth/callback")
 def oauth_callback(request: Request):
-    flow = oauth_store.get("flow")
-    if not flow:
-        raise HTTPException(
-            status_code=400,
-            detail="OAuth flow missing. Please reconnect calendar."
-        )
-
     redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
     if not redirect_uri:
         raise HTTPException(
             status_code=500,
             detail="GOOGLE_REDIRECT_URI not set"
         )
+
+    # ── FIX: Reconstruct flow fresh from env vars — no in-memory store needed.
+    # This works regardless of server restarts or multiple Render workers.
+    flow = get_oauth_flow()
 
     auth_response = f"{redirect_uri}?{request.query_params}"
 
@@ -268,7 +303,11 @@ def oauth_callback(request: Request):
             detail=f"OAuth failed: {str(e)}"
         )
 
-    doctor_id = oauth_store.get("pending_doctor")
+    # ── FIX: Read doctor_id from the `state` param Google echoes back.
+    # Falls back to the in-memory store for local dev compatibility.
+    doctor_id = str(request.query_params.get("state", "")).strip()
+    if not doctor_id:
+        doctor_id = oauth_store.get("pending_doctor", "")
     if not doctor_id:
         raise HTTPException(
             status_code=400,
@@ -461,9 +500,16 @@ def doctor_login(payload: dict, request: Request, response: Response):
     if not auth or not verify_password(password, auth.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    update_doctor_last_login(auth.id)
+    update_doctor_last_login(auth.doctor_id)
 
-    session_id = str(uuid.uuid4())
+    # Deterministic session_id = sha256(secret + doctor_id)
+    # This means the same doctor always gets the same session token,
+    # so their cookie keeps working after server restarts.
+    import hashlib
+    secret = os.getenv("SESSION_SECRET", "medschedule-default-secret")
+    session_id = hashlib.sha256(
+        f"{secret}:{auth.doctor_id}".encode()
+    ).hexdigest()
     doctor_sessions[session_id] = str(auth.doctor_id)
 
     resp = JSONResponse({"status": "ok"})
