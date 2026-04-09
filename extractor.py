@@ -4,11 +4,13 @@ import json
 import os
 import httpx
 
+from treatments import get_treatment_by_alias
+
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL_NAME   = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
 
-SYSTEM_PROMPT = """You are an information extraction engine for a doctor appointment assistant.
+SYSTEM_PROMPT = """You are an information extraction engine for a dental clinic appointment assistant.
 
 Your job is to extract structured information from a single user message.
 
@@ -52,6 +54,11 @@ patient_phone:
 - Digits only
 - null otherwise
 
+treatment_text:
+- Raw treatment phrase exactly as the user said it
+- Examples: "root canal", "checkup", "tooth extraction", "filling"
+- null if no treatment is mentioned
+
 confidence:
 - "high" → intent + info clearly stated
 - "medium" → intent clear but some ambiguity
@@ -61,6 +68,30 @@ confidence:
 
 EXAMPLES:
 
+User: "Book an appointment next friday at 3pm for a root canal"
+Output:
+{
+  "intent": "BOOK",
+  "date_text": "next friday",
+  "time_text": "3pm",
+  "patient_name": null,
+  "patient_phone": null,
+  "treatment_text": "root canal",
+  "confidence": "high"
+}
+
+User: "I need a tooth extraction on Monday"
+Output:
+{
+  "intent": "BOOK",
+  "date_text": "monday",
+  "time_text": null,
+  "patient_name": null,
+  "patient_phone": null,
+  "treatment_text": "tooth extraction",
+  "confidence": "high"
+}
+
 User: "Book an appointment next friday at 3pm"
 Output:
 {
@@ -69,6 +100,7 @@ Output:
   "time_text": "3pm",
   "patient_name": null,
   "patient_phone": null,
+  "treatment_text": null,
   "confidence": "high"
 }
 
@@ -80,6 +112,7 @@ Output:
   "time_text": "same time",
   "patient_name": null,
   "patient_phone": null,
+  "treatment_text": null,
   "confidence": "medium"
 }
 
@@ -91,16 +124,32 @@ Output:
   "time_text": null,
   "patient_name": null,
   "patient_phone": null,
+  "treatment_text": null,
   "confidence": "low"
 }
 
 """
 
+# Required fields — must always be present in output
+_REQUIRED_KEYS = [
+    "intent",
+    "date_text",
+    "time_text",
+    "patient_name",
+    "patient_phone",
+    "treatment_text",
+    "confidence",
+]
+
 
 def extract_entities(user_message: str, current_intent: str | None = None) -> dict:
     """
-    Phase-5 extractor.
     Stateless. Safe. JSON-only.
+
+    Returns all original fields PLUS:
+      treatment_text  → raw phrase the patient said  (e.g. "root canal")
+      treatment_key   → canonical key resolved locally (e.g. "root_canal")
+                        None if treatment_text could not be matched
     """
 
     user_prompt = f"""User message:
@@ -124,7 +173,7 @@ Output STRICT JSON only. No explanation, no markdown."""
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user",   "content": user_prompt},
                 ],
-                "max_tokens": 200,
+                "max_tokens": 250,
                 "temperature": 0.0,  # deterministic for extraction
             },
             timeout=10.0,
@@ -146,19 +195,23 @@ Output STRICT JSON only. No explanation, no markdown."""
         if not isinstance(data, dict):
             raise ValueError("Invalid JSON")
 
-        for key in [
-            "intent",
-            "date_text",
-            "time_text",
-            "patient_name",
-            "patient_phone",
-            "confidence",
-        ]:
+        for key in _REQUIRED_KEYS:
             if key not in data:
                 data[key] = None
 
         if data["confidence"] not in {"high", "medium", "low"}:
             data["confidence"] = "low"
+
+        # ── Resolve treatment_key locally (fast, no LLM) ────────
+        # Priority: treatment_text from LLM → fallback scan of raw message
+        raw_phrase = data.get("treatment_text") or ""
+        treatment = get_treatment_by_alias(raw_phrase) if raw_phrase else None
+
+        # Fallback: scan the full user message directly
+        if treatment is None:
+            treatment = get_treatment_by_alias(user_message)
+
+        data["treatment_key"] = treatment.key if treatment else None
 
         return data
 
@@ -170,5 +223,7 @@ Output STRICT JSON only. No explanation, no markdown."""
             "time_text": None,
             "patient_name": None,
             "patient_phone": None,
+            "treatment_text": None,
+            "treatment_key": None,
             "confidence": "low",
         }

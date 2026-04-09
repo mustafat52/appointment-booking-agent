@@ -28,10 +28,11 @@
         #chat-box::-webkit-scrollbar-track { background: transparent; }
         #chat-box::-webkit-scrollbar-thumb { background: rgba(0, 168, 120, 0.2); border-radius: 4px; }
         #chat-box::-webkit-scrollbar-thumb:hover { background: rgba(0, 168, 120, 0.3); }
-        .message { max-width: 85%; padding: 14px 18px; border-radius: 16px; font-size: 0.95rem; line-height: 1.6; animation: messageSlide 0.3s ease-out; word-wrap: break-word; }
+        .message { max-width: 85%; padding: 14px 18px; border-radius: 16px; font-size: 0.95rem; line-height: 1.7; animation: messageSlide 0.3s ease-out; word-wrap: break-word; }
         @keyframes messageSlide { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .bot { align-self: flex-start; background: var(--bot-bubble); color: var(--text-dark); border-bottom-left-radius: 4px; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06); border: 1px solid rgba(0, 168, 120, 0.08); }
         .bot strong { color: var(--primary); font-weight: 600; }
+        .bot br { display: block; content: ""; margin-top: 2px; }
         .user { align-self: flex-end; background: var(--user-bubble); color: white; border-bottom-right-radius: 4px; box-shadow: 0 2px 12px rgba(0, 168, 120, 0.2); }
         .user strong { font-weight: 600; }
         .typing { align-self: flex-start; background: var(--bot-bubble); padding: 16px 20px; border-radius: 16px; border-bottom-left-radius: 4px; display: flex; gap: 6px; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06); border: 1px solid rgba(0, 168, 120, 0.08); }
@@ -74,6 +75,6 @@
     <script>
     const DOCTOR_SLUG = "{{DOCTOR_SLUG}}";
     </script>
-    <script src="/static/script.js"></script>
+    <script src="/static/script.js?v=2"></script>
 </body>
 </html>

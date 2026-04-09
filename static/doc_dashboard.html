@@ -15,21 +15,21 @@
       --gradient-1: linear-gradient(135deg, #00A878 0%, #00D9C0 100%);
       --gradient-2: linear-gradient(135deg, #F0FDF9 0%, #E8F7FF 100%);
     }
-    
-    body { 
-      font-family: 'DM Sans', -apple-system, sans-serif; 
-      color: var(--text-dark); 
-      line-height: 1.6; 
-      background: var(--gradient-2); 
+
+    body {
+      font-family: 'DM Sans', -apple-system, sans-serif;
+      color: var(--text-dark);
+      line-height: 1.6;
+      background: var(--gradient-2);
       min-height: 100vh;
       padding: 2rem;
     }
-    
+
     .dashboard-container {
       max-width: 1200px;
       margin: 0 auto;
     }
-    
+
     .header {
       background: white;
       padding: 2rem 2.5rem;
@@ -42,13 +42,13 @@
       flex-wrap: wrap;
       gap: 1.5rem;
     }
-    
+
     .header-left {
       display: flex;
       align-items: center;
       gap: 1.5rem;
     }
-    
+
     .back-home {
       background: var(--bg-light);
       border: none;
@@ -62,12 +62,12 @@
       align-items: center;
       gap: 0.5rem;
     }
-    
+
     .back-home:hover {
       color: var(--primary);
       background: #E0F5F0;
     }
-    
+
     .logo {
       display: flex;
       align-items: center;
@@ -77,7 +77,7 @@
       font-family: 'Sora', sans-serif;
       color: var(--primary);
     }
-    
+
     .logo-icon {
       width: 40px;
       height: 40px;
@@ -88,14 +88,14 @@
       justify-content: center;
       font-size: 1.3rem;
     }
-    
+
     h2 {
       font-family: 'Sora', sans-serif;
       font-size: 2rem;
       color: var(--text-dark);
       font-weight: 700;
     }
-    
+
     .logout-btn {
       background: transparent;
       color: var(--primary);
@@ -108,14 +108,14 @@
       cursor: pointer;
       transition: all 0.3s;
     }
-    
+
     .logout-btn:hover {
       background: var(--primary);
       color: white;
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(0, 168, 120, 0.2);
     }
-    
+
     .card {
       background: white;
       padding: 0;
@@ -123,21 +123,21 @@
       box-shadow: 0 4px 20px rgba(0, 168, 120, 0.1);
       overflow: hidden;
     }
-    
+
     .table-container {
       overflow-x: auto;
     }
-    
+
     .table {
       width: 100%;
       border-collapse: separate;
       border-spacing: 0;
     }
-    
+
     .table thead {
       background: var(--gradient-2);
     }
-    
+
     .table thead th {
       padding: 1.5rem 2rem;
       text-align: left;
@@ -149,30 +149,30 @@
       letter-spacing: 0.05em;
       border-bottom: 2px solid rgba(0, 168, 120, 0.15);
     }
-    
+
     .table tbody tr {
       transition: all 0.3s;
       border-bottom: 1px solid #F0F4F8;
     }
-    
+
     .table tbody tr:hover {
       background: var(--bg-light);
     }
-    
+
     .table tbody tr:last-child {
       border-bottom: none;
     }
-    
+
     .table tbody td {
       padding: 1.8rem 2rem;
       font-size: 1rem;
       color: var(--text-dark);
     }
-    
+
     .table tbody td:first-child {
       font-weight: 600;
     }
-    
+
     .status-badge {
       display: inline-block;
       padding: 0.4rem 1rem;
@@ -180,28 +180,45 @@
       font-size: 0.85rem;
       font-weight: 600;
     }
-    
+
     .status-badge.booked {
       background: #D1FAE5;
       color: #065F46;
     }
-    
+
     .status-badge.available {
       background: #FEF3C7;
       color: #92400E;
     }
-    
+
     .status-badge.cancelled {
       background: #FEE2E2;
       color: #991B1B;
     }
-    
+
+    .treatment-badge {
+      display: inline-block;
+      padding: 0.3rem 0.8rem;
+      background: #EEF2FF;
+      color: #3730A3;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .duration-text {
+      font-size: 0.85rem;
+      color: var(--text-gray);
+      margin-top: 0.2rem;
+    }
+
     .action-buttons {
       display: flex;
       gap: 0.8rem;
       flex-wrap: wrap;
+      align-items: center;
     }
-    
+
     .btn {
       padding: 0.6rem 1.2rem;
       border: none;
@@ -212,62 +229,88 @@
       cursor: pointer;
       transition: all 0.3s;
     }
-    
+
     .cancel-btn {
       background: #FEE2E2;
       color: #991B1B;
     }
-    
+
     .cancel-btn:hover:not(:disabled) {
       background: #FCA5A5;
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(220, 38, 38, 0.2);
     }
-    
+
     .cancel-btn:disabled {
       opacity: 0.4;
       cursor: not-allowed;
       background: #F3F4F6;
       color: #9CA3AF;
     }
-    
+
     .reschedule-btn {
       background: var(--primary);
       color: white;
     }
-    
+
     .reschedule-btn:hover:not(:disabled) {
       background: var(--primary-dark);
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(0, 168, 120, 0.3);
     }
-    
+
     .reschedule-btn:disabled {
       opacity: 0.4;
       cursor: not-allowed;
       background: #F3F4F6;
       color: #9CA3AF;
     }
-    
+
+    /* Coming Soon voice button */
+    .voice-btn {
+      background: #F3F4F6;
+      color: #9CA3AF;
+      border: 1.5px dashed #D1D5DB;
+      cursor: default;
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.85rem;
+      padding: 0.5rem 1rem;
+    }
+
+    .coming-soon-badge {
+      display: inline-block;
+      background: #FEF3C7;
+      color: #92400E;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.15rem 0.45rem;
+      border-radius: 20px;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
     .empty-state {
       text-align: center;
       padding: 4rem 2rem;
       color: var(--text-gray);
     }
-    
+
     .empty-state-icon {
       font-size: 4rem;
       margin-bottom: 1rem;
       opacity: 0.5;
     }
-    
+
     .empty-state h3 {
       font-family: 'Sora', sans-serif;
       font-size: 1.5rem;
       margin-bottom: 0.5rem;
       color: var(--text-dark);
     }
-    
+
     .loading {
       text-align: center;
       padding: 3rem;
@@ -346,6 +389,24 @@
       min-width: 100px;
     }
 
+    .modal-cancel-btn {
+      background: #F3F4F6;
+      color: var(--text-dark);
+    }
+
+    .modal-cancel-btn:hover {
+      background: #E5E7EB;
+    }
+
+    .modal-confirm-btn {
+      background: var(--primary);
+      color: white;
+    }
+
+    .modal-confirm-btn:hover {
+      background: var(--primary-dark);
+    }
+
     .alert {
       position: fixed;
       top: 2rem;
@@ -363,88 +424,18 @@
     }
 
     @keyframes slideIn {
-      from {
-        transform: translateX(400px);
-        opacity: 0;
-      }
-      to {
-        transform: translateX(0);
-        opacity: 1;
-      }
+      from { transform: translateX(400px); opacity: 0; }
+      to   { transform: translateX(0);     opacity: 1; }
     }
 
-    .alert.success {
-      border-left: 4px solid #10B981;
-    }
+    .alert.success { border-left: 4px solid #10B981; }
+    .alert.error   { border-left: 4px solid #EF4444; }
 
-    .alert.error {
-      border-left: 4px solid #EF4444;
-    }
+    .alert-icon    { font-size: 1.5rem; }
+    .alert-message { flex: 1; font-weight: 500; }
 
-    .alert-icon {
-      font-size: 1.5rem;
-    }
-
-    .alert-message {
-      flex: 1;
-      font-weight: 500;
-    }
-    
-    @media (max-width: 768px) {
-      body {
-        padding: 1rem;
-      }
-      
-      .header {
-        padding: 1.5rem;
-      }
-      
-      .header-left {
-        width: 100%;
-      }
-      
-      h2 {
-        font-size: 1.5rem;
-      }
-      
-      .table thead th,
-      .table tbody td {
-        padding: 1rem;
-        font-size: 0.9rem;
-      }
-      
-      .action-buttons {
-        flex-direction: column;
-      }
-      
-      .btn {
-        width: 100%;
-      }
-
-      .alert {
-        top: 1rem;
-        right: 1rem;
-        left: 1rem;
-      }
-    }
-    
-    @media (max-width: 480px) {
-      .logo span {
-        display: none;
-      }
-      
-      .table thead th,
-      .table tbody td {
-        padding: 0.8rem 0.5rem;
-        font-size: 0.85rem;
-      }
-    }
-
-        /* WhatsApp Section Styling */
-    .whatsapp-card {
-      padding: 2rem;
-      margin-bottom: 2rem;
-    }
+    /* WhatsApp Section Styling */
+    .whatsapp-card { padding: 2rem; margin-bottom: 2rem; }
 
     .whatsapp-header {
       display: flex;
@@ -453,9 +444,7 @@
       margin-bottom: 1.5rem;
     }
 
-    .whatsapp-icon {
-      font-size: 1.8rem;
-    }
+    .whatsapp-icon  { font-size: 1.8rem; }
 
     .whatsapp-title {
       font-family: 'Sora', sans-serif;
@@ -469,14 +458,37 @@
       font-size: 0.95rem;
     }
 
+    .primary-btn {
+      background: var(--primary);
+      color: white;
+      padding: 0.7rem 1.4rem;
+    }
+
+    .primary-btn:hover {
+      background: var(--primary-dark);
+      transform: translateY(-2px);
+    }
+
+    .secondary-btn {
+      background: var(--bg-light);
+      color: var(--text-dark);
+      border: 1.5px solid #E5E7EB;
+      padding: 0.7rem 1.4rem;
+    }
+
+    .secondary-btn:hover {
+      background: #E0F5F0;
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
     .qr-section {
       margin-top: 1.8rem;
       text-align: center;
+      transition: all 0.3s ease;
     }
 
-    .qr-section.hidden {
-      display: none;
-    }
+    .qr-section.hidden { display: none; }
 
     .qr-link {
       margin-bottom: 1rem;
@@ -486,25 +498,36 @@
     .qr-link a {
       display: block;
       margin-top: 0.3rem;
-      color: var(--primary-green);
+      color: var(--primary);
       font-weight: 600;
       text-decoration: none;
     }
 
-    .qr-link a:hover {
-      text-decoration: underline;
-    }
+    .qr-link a:hover { text-decoration: underline; }
 
     .qr-image {
       max-width: 220px;
       margin: 1rem auto;
       display: block;
     }
-    .qr-section {
-    transition: all 0.3s ease;
+
+    @media (max-width: 768px) {
+      body { padding: 1rem; }
+      .header { padding: 1.5rem; }
+      .header-left { width: 100%; }
+      h2 { font-size: 1.5rem; }
+      .table thead th,
+      .table tbody td { padding: 1rem; font-size: 0.9rem; }
+      .action-buttons { flex-direction: column; }
+      .btn { width: 100%; }
+      .alert { top: 1rem; right: 1rem; left: 1rem; }
     }
 
-
+    @media (max-width: 480px) {
+      .logo span { display: none; }
+      .table thead th,
+      .table tbody td { padding: 0.8rem 0.5rem; font-size: 0.85rem; }
+    }
   </style>
 </head>
 <body>
@@ -512,13 +535,13 @@
   <div id="modalOverlay" style="display:none;">
     <div class="modal-backdrop" onclick="closeModals()"></div>
 
-    <!-- Confirm Modal -->
+    <!-- Confirm Cancel Modal -->
     <div class="modal" id="confirmModal" style="display:none;">
-      <h3>Confirm Action</h3>
+      <h3>Confirm Cancellation</h3>
       <p id="confirmMessage"></p>
       <div class="modal-actions">
-        <button class="btn modal-cancel-btn" id="confirmCancel">Cancel</button>
-        <button class="btn modal-confirm-btn" id="confirmOk">Confirm</button>
+        <button class="btn modal-cancel-btn" id="confirmCancel">Go Back</button>
+        <button class="btn modal-confirm-btn" id="confirmOk">Yes, Cancel</button>
       </div>
     </div>
 
@@ -556,8 +579,7 @@
     </div>
 
     <div class="card">
-      <div class="table-container">
-              <!-- WhatsApp Booking Section -->
+      <!-- WhatsApp Booking Section -->
       <div class="card whatsapp-card">
         <div class="whatsapp-header">
           <div class="whatsapp-icon">📱</div>
@@ -578,15 +600,14 @@
             <span>Booking Link:</span>
             <a id="waLink" href="#" target="_blank"></a>
           </div>
-
-          <img id="qrImage" class="qr-image" />
-
-          <button id="downloadQrBtn" class="btn secondary-btn">
+          <img id="qrImage" class="qr-image" alt="WhatsApp QR Code" />
+          <button id="downloadQrBtn" class="btn secondary-btn" style="margin-top: 0.5rem;">
             Download QR
           </button>
         </div>
       </div>
 
+      <div class="table-container">
         <table class="table">
           <thead>
             <tr>
@@ -594,13 +615,14 @@
               <th>Time</th>
               <th>Patient</th>
               <th>Phone</th>
+              <th>Treatment</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody id="appointments">
             <tr>
-              <td colspan="5" class="loading">Loading appointments...</td>
+              <td colspan="7" class="loading">Loading appointments...</td>
             </tr>
           </tbody>
         </table>

@@ -1,3 +1,5 @@
+# tools.py
+
 from datetime import datetime, timedelta
 import pytz
 import os
@@ -7,12 +9,10 @@ from auth_store import oauth_store
 
 # LEGACY (fallback only – do not add new logic here)
 from doctor_config import DOCTORS, DEFAULT_DOCTOR_ID
-from sqlalchemy import false, select
+from sqlalchemy import select
 from db.database import SessionLocal
 from db.models import DoctorCalendarCredential
 from services.notification_service import notify_doctor_via_whatsapp
-
-
 
 from db.repository import (
     create_patient,
@@ -22,20 +22,22 @@ from db.repository import (
     reschedule_appointment_db,
     get_doctor_by_id,
     get_appointment_by_id,
-    get_doctor_by_id
 )
+
+# Treatment catalogue — for duration and display name
+from treatments import get_duration_for_treatment, get_treatment_by_key
 
 TIMEZONE = "Asia/Kolkata"
 DISABLE_CALENDAR = os.getenv("DISABLE_CALENDAR", "false").lower() == "true"
 
 
-
-
-
+# ------------------------------------------------------------------
+# Credential helpers
+# ------------------------------------------------------------------
 
 def get_credentials_for_doctor(doctor_id):
     """
-    Phase 8 – DB-first calendar credentials lookup.
+    DB-first calendar credentials lookup.
     Falls back to in-memory store for safety.
     """
     from db.repository import get_doctor_calendar_credentials
@@ -62,9 +64,6 @@ def get_credentials_for_doctor(doctor_id):
     return creds_map.get(doctor_id_str)
 
 
-
-
-
 # ------------------------------------------------------------------
 # LEGACY CONFIG-BASED DOCTOR FETCH (FALLBACK ONLY)
 # ------------------------------------------------------------------
@@ -72,13 +71,12 @@ def _get_doctor(doctor_id: str):
     """
     ⚠️ LEGACY FALLBACK
     Do NOT add new logic dependencies on this.
-    Will be removed in Phase 7.
     """
     return DOCTORS.get(doctor_id, DOCTORS[DEFAULT_DOCTOR_ID])
 
 
 # ------------------------------------------------------------------
-# Phase 6.6 – DB-backed doctor fetch (SAFE, ADDITIVE)
+# DB-backed doctor fetch
 # ------------------------------------------------------------------
 def get_doctor_from_db(doctor_id):
     """
@@ -100,7 +98,7 @@ def get_doctor_from_db(doctor_id):
 
 
 # ------------------------------------------------------------------
-# Phase 6.6.3 – DB-first calendar identity (SAFE)
+# DB-first calendar identity
 # ------------------------------------------------------------------
 def get_calendar_id_for_doctor(doctor_id):
     with SessionLocal() as db:
@@ -116,9 +114,8 @@ def get_calendar_id_for_doctor(doctor_id):
         return creds.calendar_id or "primary"
 
 
-
 # ------------------------------------------------------------------
-# Phase 6.6 – DB-based availability (SAFE, ADDITIVE)
+# Availability check (DB-only)
 # ------------------------------------------------------------------
 def check_availability_db(
     date_str: str,
@@ -131,7 +128,6 @@ def check_availability_db(
     Returns True if slot is free, False if overlap exists.
     Never touches Google Calendar.
     """
-
     from db.database import SessionLocal
     from db.models import Appointment
 
@@ -153,9 +149,8 @@ def check_availability_db(
         db.close()
 
 
-
 # ------------------------------------------------------------------
-# Availability entry point (DB-first, LEGACY fallback preserved)
+# Availability entry point (DB-first)
 # ------------------------------------------------------------------
 def check_availability(
     date_str: str,
@@ -176,26 +171,43 @@ def check_availability(
 
 
 # ------------------------------------------------------------------
-# Booking (calendar now DB-first, logic unchanged otherwise)
+# Booking — treatment-aware, backward compatible
 # ------------------------------------------------------------------
-def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone):
+def book_appointment(
+    date_str: str,
+    time_str: str,
+    doctor_id,
+    patient_name: str,
+    patient_phone: str,
+    treatment_key: str | None = None,   # optional — falls back gracefully
+):
+    """
+    Books an appointment and creates a Google Calendar event.
+
+    treatment_key (e.g. "root_canal") is optional.
+    When provided:
+      • Duration is taken from the treatment catalogue
+      • Calendar event title and description include the treatment name
+    When None:
+      • Falls back to doctor.avg_consult_minutes (original behaviour)
+    """
     if not doctor_id:
         raise ValueError("Doctor context missing during booking")
 
     db = SessionLocal()
     try:
-        doctor_db = get_doctor_by_id(db,doctor_id)
+        doctor_db = get_doctor_by_id(db, doctor_id)
         if not doctor_db:
             raise ValueError("Doctor not found during booking")
 
-        # ✅ ALWAYS create a new patient
+        # Always create a new patient record
         patient = create_patient(
             db,
             name=patient_name,
             phone=patient_phone
         )
 
-        # ❗ Calendar creation is MANDATORY
+        # Calendar creation is MANDATORY
         if DISABLE_CALENDAR:
             raise RuntimeError("Calendar integration is disabled")
 
@@ -210,22 +222,49 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
             datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
         )
 
-        if not doctor_db.avg_consult_minutes:
-            raise RuntimeError("Doctor consultation duration not configured")
+        # Treatment-aware duration
+        if treatment_key:
+            duration_minutes = get_duration_for_treatment(
+                treatment_key,
+                default_minutes=doctor_db.avg_consult_minutes or 30,
+            )
+            treatment = get_treatment_by_key(treatment_key)
+            treatment_display = (
+                treatment.display_name
+                if treatment
+                else treatment_key.replace("_", " ").title()
+            )
+        else:
+            if not doctor_db.avg_consult_minutes:
+                raise RuntimeError("Doctor consultation duration not configured")
+            duration_minutes = doctor_db.avg_consult_minutes
+            treatment_display = None
 
-        end_dt = start_dt + timedelta(
-            minutes=doctor_db.avg_consult_minutes
-        )
+        end_dt = start_dt + timedelta(minutes=duration_minutes)
 
         calendar_id = get_calendar_id_for_doctor(doctor_id)
 
-        event = {
-            "summary": f"New Appointment – {patient_name}",
-            "description": (
+        # Build event title and description with treatment info when available
+        if treatment_display:
+            event_summary = f"Appointment – {patient_name} ({treatment_display})"
+            event_description = (
+                f"Patient Name: {patient_name}\n"
+                f"Phone: {patient_phone}\n"
+                f"Treatment: {treatment_display}\n"
+                f"Duration: {duration_minutes} min\n\n"
+                f"Booked via MedSchedule AI"
+            )
+        else:
+            event_summary = f"New Appointment – {patient_name}"
+            event_description = (
                 f"Patient Name: {patient_name}\n"
                 f"Phone: {patient_phone}\n\n"
                 f"Booked via MedSchedule AI"
-            ),
+            )
+
+        event = {
+            "summary": event_summary,
+            "description": event_description,
             "start": {
                 "dateTime": start_dt.isoformat(),
                 "timeZone": TIMEZONE,
@@ -237,22 +276,19 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
             "attendees": [
                 {"email": doctor_db.email}
             ],
-           "reminders": {
-            "useDefault": False,
-            "overrides": [
-                { "method": "popup", "minutes": 30 }
-            ]
+            "reminders": {
+                "useDefault": False,
+                "overrides": [
+                    {"method": "popup", "minutes": 30}
+                ]
+            }
         }
-    }
-
-
 
         created = service.events().insert(
             calendarId=calendar_id,
             body=event,
             sendUpdates="all"
         ).execute()
-
 
         event_id = created["id"]
 
@@ -264,30 +300,32 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
             appointment_time=datetime.strptime(time_str, "%H:%M").time(),
             status="BOOKED",
             calendar_event_id=event_id,
+            treatment_key=treatment_key,
+            duration_minutes=duration_minutes,
         )
 
         if not appt or not appt.calendar_event_id:
-            # rollback calendar event
+            # Rollback calendar event if DB write failed
             service.events().delete(
                 calendarId=calendar_id,
-                eventId=appt.calendar_event_id,
+                eventId=event_id,
                 sendUpdates="all"
             ).execute()
-
             raise RuntimeError("Appointment creation failed after calendar event creation")
 
         db.commit()
 
-        
-        # 🔔 Doctor Notification (Safe, Non-Blocking)
+        # Doctor Notification (non-blocking)
         try:
+            treatment_line = f"\nTreatment: {treatment_display}" if treatment_display else ""
             notify_doctor_via_whatsapp(
                 doctor=appt.doctor,
                 message=(
                     f"📅 New Appointment Booked\n\n"
                     f"Patient: {patient_name}\n"
                     f"Date: {date_str}\n"
-                    f"Time: {time_str}\n"
+                    f"Time: {time_str}{treatment_line}\n"
+                    f"Duration: {duration_minutes} min\n"
                     f"Phone: {patient_phone}"
                 )
             )
@@ -299,6 +337,8 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
             "event_id": event_id,
             "date": date_str,
             "time": time_str,
+            "treatment": treatment_display,
+            "duration_minutes": duration_minutes,
         }
 
     except Exception:
@@ -308,8 +348,9 @@ def book_appointment(date_str, time_str, doctor_id, patient_name, patient_phone)
     finally:
         db.close()
 
+
 # ------------------------------------------------------------------
-# Cancel (calendar deletion now DB-first)
+# Cancel
 # ------------------------------------------------------------------
 def cancel_appointment(event_id: str, doctor_id: str):
     appt = get_appointment_by_event_id(event_id)
@@ -318,11 +359,6 @@ def cancel_appointment(event_id: str, doctor_id: str):
     cancel_appointment_by_id(appt.appointment_id, doctor_id)
 
 
-
-
-# ------------------------------------------------------------------
-# Phase 6.5 – DB-first cancellation (UNCHANGED)
-# ------------------------------------------------------------------
 def cancel_appointment_by_id(appointment_id, doctor_id):
     appt = get_appointment_by_id(appointment_id)
     if not appt:
@@ -348,12 +384,13 @@ def cancel_appointment_by_id(appointment_id, doctor_id):
                 f"Failed to delete calendar event: {str(e)}"
             )
 
-    # 2️⃣ ALWAYS cancel in DB (only if calendar delete succeeded or was not needed)
+    # 2️⃣ ALWAYS cancel in DB
     cancel_appointment_db(appointment_id)
 
 
-
-
+# ------------------------------------------------------------------
+# Working day / clinic hours helpers
+# ------------------------------------------------------------------
 
 def is_working_day(date_str: str, doctor_id: str) -> bool:
     doctor = get_doctor_from_db(doctor_id)
@@ -367,6 +404,22 @@ def is_working_day(date_str: str, doctor_id: str) -> bool:
     return weekday in working_days
 
 
+def is_within_clinic_hours(time_str: str, doctor_id) -> bool:
+    db = SessionLocal()
+    try:
+        doctor = get_doctor_by_id(db, doctor_id)
+        if not doctor:
+            return False
+
+        requested_time = datetime.strptime(time_str, "%H:%M").time()
+        return doctor.work_start_time <= requested_time <= doctor.work_end_time
+    finally:
+        db.close()
+
+
+# ------------------------------------------------------------------
+# Update calendar event (reschedule side-effect)
+# ------------------------------------------------------------------
 def update_calendar_event(
     *,
     doctor_id,
@@ -395,7 +448,7 @@ def update_calendar_event(
             datetime.strptime(new_time, "%H:%M").time(),
         )
     )
-    
+
     doctor = get_doctor_from_db(doctor_id)
     end_dt = start_dt + timedelta(minutes=doctor.avg_consult_minutes)
 
@@ -419,20 +472,3 @@ def update_calendar_event(
         body=event,
         sendUpdates="all"
     ).execute()
-
-
-
-
-
-def is_within_clinic_hours(time_str: str, doctor_id) -> bool:
-    db = SessionLocal()
-    try:
-        doctor = get_doctor_by_id(db, doctor_id)
-        if not doctor:
-            return False
-
-        requested_time = datetime.strptime(time_str, "%H:%M").time()
-
-        return doctor.work_start_time <= requested_time <= doctor.work_end_time
-    finally:
-        db.close()

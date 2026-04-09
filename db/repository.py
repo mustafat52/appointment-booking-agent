@@ -1,9 +1,11 @@
-from sqlalchemy.orm import Session
+# db/repository.py
+
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import select, desc, func
 from datetime import date, time, datetime
 
 from db.database import SessionLocal
-from db.models import Doctor, Patient, Appointment , DoctorCalendarCredential, DoctorAuth
+from db.models import Doctor, Patient, Appointment, DoctorCalendarCredential, DoctorAuth
 from services.notification_service import notify_doctor_via_whatsapp
 
 
@@ -46,7 +48,7 @@ def create_doctor(
     clinic_email,
     doctor_whatsapp_number,
     clinic_phone_number,
-    slug : str,
+    slug: str,
     working_days: list[int],
     work_start_time: time,
     work_end_time: time,
@@ -103,6 +105,7 @@ def get_or_create_patient(name: str, phone: str) -> Patient:
     finally:
         db.close()
 
+
 def create_patient(
     db: Session,
     *,
@@ -118,7 +121,6 @@ def create_patient(
     return patient
 
 
-# 🔹 NEW (Phase 6.5): fetch patient WITHOUT creating
 def get_patients_by_phone(phone: str) -> list[Patient]:
     db = get_db_session()
     try:
@@ -126,7 +128,6 @@ def get_patients_by_phone(phone: str) -> list[Patient]:
         return db.execute(stmt).scalars().all()
     finally:
         db.close()
-
 
 
 # -------------------------
@@ -142,6 +143,8 @@ def create_appointment(
     appointment_time,
     status,
     calendar_event_id,
+    treatment_key: str = None,
+    duration_minutes: int = None,
 ):
     appointment = Appointment(
         doctor_id=doctor_id,
@@ -150,11 +153,12 @@ def create_appointment(
         appointment_time=appointment_time,
         status=status,
         calendar_event_id=calendar_event_id,
+        treatment_key=treatment_key,
+        duration_minutes=duration_minutes,
     )
     db.add(appointment)
     db.flush()
     return appointment
-
 
 
 def get_appointment_by_event_id(event_id: str) -> Appointment | None:
@@ -168,6 +172,7 @@ def get_appointment_by_event_id(event_id: str) -> Appointment | None:
     finally:
         db.close()
 
+
 def cancel_appointment_db(appointment_id) -> None:
     db = get_db_session()
     try:
@@ -179,16 +184,16 @@ def cancel_appointment_db(appointment_id) -> None:
         appt.updated_at = func.now()
         db.commit()
 
-        # 🔹 Explicitly fetch doctor
-        doctor = get_doctor_by_id(appt.doctor_id)
+        # Fetch doctor for notification
+        doctor = get_doctor_by_id(db, appt.doctor_id)
 
-        # 🔔 Doctor Notification (Cancel)
+        # Doctor Notification (Cancel) — non-blocking
         try:
             notify_doctor_via_whatsapp(
                 doctor=doctor,
                 message=(
                     f"❌ Appointment Cancelled\n\n"
-                    f"Patient: {appt.patient_name}\n"
+                    f"Patient: {appt.patient.name if appt.patient else 'Unknown'}\n"
                     f"Date: {appt.appointment_date}\n"
                     f"Time: {appt.appointment_time.strftime('%H:%M')}"
                 )
@@ -213,11 +218,11 @@ def reschedule_appointment_db(
         if not appt:
             raise RuntimeError("Appointment not found")
 
-        # 🔹 Store old values before updating
+        # Store old values before updating
         old_date = appt.appointment_date
         old_time = appt.appointment_time.strftime("%H:%M")
 
-        # 🔹 Apply new values
+        # Apply new values
         appt.appointment_date = new_date
         appt.appointment_time = new_time
         if new_calendar_event_id is not None:
@@ -228,13 +233,13 @@ def reschedule_appointment_db(
         db.commit()
         db.refresh(appt)
 
-        # 🔔 Doctor Notification (Reschedule)
+        # Doctor Notification (Reschedule) — non-blocking
         try:
             notify_doctor_via_whatsapp(
-                doctor = get_doctor_by_id(appt.doctor_id),
+                doctor=get_doctor_by_id(db, appt.doctor_id),
                 message=(
                     f"🔁 Appointment Rescheduled\n\n"
-                    f"Patient: {appt.patient_name}\n"
+                    f"Patient: {appt.patient.name if appt.patient else 'Unknown'}\n"
                     f"Old: {old_date} – {old_time}\n"
                     f"New: {appt.appointment_date} – "
                     f"{appt.appointment_time.strftime('%H:%M')}"
@@ -249,8 +254,6 @@ def reschedule_appointment_db(
         db.close()
 
 
-
-# 🔹 NEW (Phase 6.5): get all ACTIVE appointments for patient
 def get_active_appointments_by_phone(
     *,
     phone,
@@ -259,7 +262,6 @@ def get_active_appointments_by_phone(
 
     db = get_db_session()
     try:
-        # 1️⃣ get all patients with this phone
         patients = db.execute(
             select(Patient).where(Patient.phone == phone)
         ).scalars().all()
@@ -269,7 +271,6 @@ def get_active_appointments_by_phone(
 
         patient_ids = [p.patient_id for p in patients]
 
-        # 2️⃣ fetch appointments for all those IDs
         stmt = (
             select(Appointment)
             .where(
@@ -286,8 +287,6 @@ def get_active_appointments_by_phone(
         db.close()
 
 
-
-# 🔹 NEW (Phase 6.5): filter active appointments by date
 def get_active_appointments_by_date(
     *,
     patient_id,
@@ -323,7 +322,6 @@ def get_doctor_by_email(email: str) -> Doctor | None:
         db.close()
 
 
-
 def get_upcoming_appointments_for_doctor(
     doctor_id,
     limit: int = 50
@@ -332,7 +330,7 @@ def get_upcoming_appointments_for_doctor(
     try:
         stmt = (
             select(Appointment)
-            .options(joinedload(Appointment.patient))  
+            .options(joinedload(Appointment.patient))
             .where(
                 Appointment.doctor_id == doctor_id,
                 Appointment.status != "CANCELLED",
@@ -349,7 +347,6 @@ def get_upcoming_appointments_for_doctor(
         db.close()
 
 
-
 def get_appointment_by_id(appointment_id):
     db = get_db_session()
     try:
@@ -358,9 +355,8 @@ def get_appointment_by_id(appointment_id):
         db.close()
 
 
-
 # --------------------------------------------------
-# Phase 8 – Doctor calendar credentials (OAuth)
+# Doctor calendar credentials (OAuth)
 # --------------------------------------------------
 
 def save_doctor_calendar_credentials(
@@ -372,10 +368,6 @@ def save_doctor_calendar_credentials(
     refresh_token: str,
     expires_at,
 ):
-    """
-    Insert or update calendar credentials for a doctor.
-    One doctor = one active calendar connection.
-    """
     db = get_db_session()
     try:
         creds = db.execute(
@@ -410,10 +402,6 @@ def save_doctor_calendar_credentials(
 
 
 def get_doctor_calendar_credentials(doctor_id):
-    """
-    Fetch calendar credentials for a doctor.
-    Returns None if not connected.
-    """
     db = get_db_session()
     try:
         return db.execute(
@@ -428,10 +416,6 @@ def get_doctor_calendar_credentials(doctor_id):
 def get_doctor_by_id(db, doctor_id):
     return db.get(Doctor, doctor_id)
 
-
-from datetime import date
-from sqlalchemy import select
-from sqlalchemy.orm import joinedload
 
 def get_todays_appointments_for_doctor(doctor_id):
     db = get_db_session()
@@ -509,14 +493,14 @@ def get_doctor_by_whatsapp_number(db: Session, whatsapp_number: str):
     return (
         db.query(Doctor)
         .filter(
-            Doctor.whatsapp_number == whatsapp_number,
+            Doctor.doctor_whatsapp_number == whatsapp_number,
             Doctor.is_active == True
         )
         .first()
     )
 
-from db.models import PatientDoctorLink
 
+from db.models import PatientDoctorLink
 
 
 def get_doctor_id_by_phone(phone_number: str):
@@ -525,10 +509,8 @@ def get_doctor_id_by_phone(phone_number: str):
         link = db.query(PatientDoctorLink).filter(
             PatientDoctorLink.phone_number == phone_number
         ).first()
-
         if link:
             return link.doctor_id
-
         return None
     finally:
         db.close()

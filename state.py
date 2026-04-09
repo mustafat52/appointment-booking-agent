@@ -14,6 +14,7 @@ class FlowStage(Enum):
     INTENT_CONFIRM_SWITCH = auto()
 
     # Booking flow
+    BOOK_TREATMENT = auto()   # collect treatment type before date
     BOOK_DATE = auto()
     BOOK_TIME = auto()
     BOOK_CONFIRM = auto()
@@ -49,6 +50,7 @@ class BookingState:
         # ------------------
         # Booking data (in-progress)
         # ------------------
+        self.treatment_key: str | None = None   # e.g. "root_canal"
         self.date = None
         self.time = None
         self.patient_name = None
@@ -96,6 +98,7 @@ class BookingState:
         self.intent = None
         self.stage = FlowStage.IDLE
 
+        self.treatment_key = None
         self.date = None
         self.time = None
         self.patient_name = None
@@ -113,6 +116,7 @@ class BookingState:
         """
         Reset only booking-related fields.
         """
+        self.treatment_key = None
         self.date = None
         self.time = None
         self.patient_name = None

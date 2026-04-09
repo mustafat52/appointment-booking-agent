@@ -4,7 +4,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // Helper: Show alert notifications
   // -----------------------------
   function showAlert(message, type = 'success') {
-    // Remove existing alerts
     const existing = document.querySelector('.alert');
     if (existing) existing.remove();
 
@@ -25,32 +24,31 @@ document.addEventListener("DOMContentLoaded", () => {
   // -----------------------------
   // Auth guard
   // -----------------------------
-async function ensureLoggedIn() {
-  try {
-    const res = await fetch("/auth/doctor/me", {
-      credentials: "include"
-    });
+  async function ensureLoggedIn() {
+    try {
+      const res = await fetch("/auth/doctor/me", {
+        credentials: "include"
+      });
 
-    if (!res.ok) {
+      if (!res.ok) {
+        window.location.href = "/static/doc_login.html";
+        return false;
+      }
+
+      const doctor = await res.json();
+
+      const welcomeEl = document.getElementById("welcomeMessage");
+      if (welcomeEl && doctor.name) {
+        welcomeEl.textContent = `Welcome back, Dr. ${doctor.name} 👋`;
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Auth check failed:", error);
       window.location.href = "/static/doc_login.html";
       return false;
     }
-
-    const doctor = await res.json();
-
-    // ✅ Personalised welcome message
-    const welcomeEl = document.getElementById("welcomeMessage");
-    if (welcomeEl && doctor.name) {
-      welcomeEl.textContent = `Welcome back, Dr. ${doctor.name} 👋`;
-    }
-
-    return true;
-  } catch (error) {
-    console.error("Auth check failed:", error);
-    window.location.href = "/static/doc_login.html";
-    return false;
   }
-}
 
   // -----------------------------
   // Load appointments
@@ -75,7 +73,7 @@ async function ensureLoggedIn() {
       if (data.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="6" class="empty-state">
+            <td colspan="7" class="empty-state">
               <div class="empty-state-icon">📅</div>
               <h3>No Appointments</h3>
               <p>You don't have any upcoming appointments.</p>
@@ -90,40 +88,54 @@ async function ensureLoggedIn() {
         const isBooked = a.status === "BOOKED";
         const statusClass = a.status.toLowerCase();
 
+        // Treatment cell — show badge if available, dash if not
+        const treatmentCell = a.treatment
+          ? `<span class="treatment-badge">🦷 ${a.treatment}</span>
+             ${a.duration ? `<div class="duration-text">⏱ ${a.duration}</div>` : ''}`
+          : `<span style="color:#9CA3AF;">—</span>`;
+
         const row = document.createElement("tr");
         row.innerHTML = `
           <td>${a.date}</td>
           <td>${a.time}</td>
-          <td>${a.patient_name || "-"}</td>
-          <td>${a.patient_phone || "-"}</td>
+          <td>${a.patient_name || "—"}</td>
+          <td>${a.patient_phone || "—"}</td>
+          <td>${treatmentCell}</td>
           <td><span class="status-badge ${statusClass}">${a.status}</span></td>
           <td>
             <div class="action-buttons">
-              <button 
-                class="btn cancel-btn" 
+              <button
+                class="btn cancel-btn"
                 data-id="${a.appointment_id}"
                 data-date="${a.date}"
                 data-time="${a.time}"
                 data-patient="${a.patient_name || 'No patient'}"
-                data-phone="${a.patient_phone || '-'}"
+                data-phone="${a.patient_phone || '—'}"
                 ${!isBooked ? "disabled" : ""}>
                 Cancel
               </button>
-              <button 
-                class="btn reschedule-btn" 
+              <button
+                class="btn reschedule-btn"
                 data-id="${a.appointment_id}"
                 data-date="${a.date}"
                 data-time="${a.time}"
                 data-patient="${a.patient_name || 'No patient'}"
-                data-phone="${a.patient_phone || '-'}"
+                data-phone="${a.patient_phone || '—'}"
                 ${!isBooked ? "disabled" : ""}>
                 Reschedule
+              </button>
+              <button
+                class="btn voice-btn"
+                title="AI follow-up calls — coming soon"
+                onclick="showVoiceComingSoon(event)">
+                📞 <span class="coming-soon-badge">Soon</span>
               </button>
             </div>
           </td>
         `;
         tbody.appendChild(row);
       });
+
     } catch (error) {
       console.error("Error loading appointments:", error);
       showAlert("Failed to load appointments. Please try again.", "error");
@@ -144,43 +156,49 @@ async function ensureLoggedIn() {
     document.getElementById("modalOverlay").style.display = "none";
     document.getElementById("confirmModal").style.display = "none";
     document.getElementById("rescheduleModal").style.display = "none";
-    
-    // Reset form fields
+
     document.getElementById("rescheduleDate").value = "";
     document.getElementById("rescheduleTime").value = "";
     activeAppointmentId = null;
   }
 
   // -----------------------------
+  // Coming Soon: Voice call tooltip
+  // -----------------------------
+  window.showVoiceComingSoon = function(e) {
+    e.stopPropagation();
+    showAlert("📞 AI follow-up voice calls are coming soon! Stay tuned.", "success");
+  };
+
+  // -----------------------------
   // Appointment actions (Cancel / Reschedule)
   // -----------------------------
   document.addEventListener("click", async (e) => {
 
-    // 🗑️ Cancel (open confirm modal)
+    // Cancel — open confirm modal
     if (e.target.classList.contains("cancel-btn") && !e.target.disabled) {
       activeAppointmentId = e.target.dataset.id;
-      const date = e.target.dataset.date;
-      const time = e.target.dataset.time;
+      const date    = e.target.dataset.date;
+      const time    = e.target.dataset.time;
       const patient = e.target.dataset.patient;
-      const phone = e.target.dataset.phone;
+      const phone   = e.target.dataset.phone;
       document.getElementById("confirmMessage").innerText =
         `Are you sure you want to cancel this appointment?\n\nDate: ${date}\nTime: ${time}\nPatient: ${patient}\nPhone: ${phone}\n\nNote: The patient will need to be notified separately.`;
 
       openModal("confirmModal");
     }
 
-    // 📝 Reschedule (open reschedule modal)
+    // Reschedule — open reschedule modal
     if (e.target.classList.contains("reschedule-btn") && !e.target.disabled) {
       activeAppointmentId = e.target.dataset.id;
-      const date = e.target.dataset.date;
-      const time = e.target.dataset.time;
+      const date    = e.target.dataset.date;
+      const time    = e.target.dataset.time;
       const patient = e.target.dataset.patient;
-      const phone = e.target.dataset.phone;
+      const phone   = e.target.dataset.phone;
 
       document.getElementById("rescheduleInfo").innerText =
         `Current appointment:\nDate: ${date}\nTime: ${time}\nPatient: ${patient}\nPhone: ${phone}`;
 
-      // Set minimum date to today
       const today = new Date().toISOString().split('T')[0];
       document.getElementById("rescheduleDate").min = today;
 
@@ -215,7 +233,7 @@ async function ensureLoggedIn() {
         loadAppointments();
       } else {
         const errorData = await res.json().catch(() => ({}));
-        showAlert(errorData.message || "Failed to cancel appointment", "error");
+        showAlert(errorData.message || errorData.detail || "Failed to cancel appointment", "error");
       }
     } catch (error) {
       console.error("Error cancelling appointment:", error);
@@ -243,7 +261,6 @@ async function ensureLoggedIn() {
       return;
     }
 
-    // Validate date is not in the past
     const selectedDateTime = new Date(`${newDate}T${newTime}`);
     const now = new Date();
     if (selectedDateTime < now) {
@@ -272,7 +289,7 @@ async function ensureLoggedIn() {
         loadAppointments();
       } else {
         const errorData = await res.json().catch(() => ({}));
-        showAlert(errorData.message || "Failed to reschedule appointment", "error");
+        showAlert(errorData.message || errorData.detail || "Failed to reschedule appointment", "error");
       }
     } catch (error) {
       console.error("Error rescheduling appointment:", error);
@@ -314,56 +331,84 @@ async function ensureLoggedIn() {
 
 // -----------------------------
 // WhatsApp QR Section
+// (outside DOMContentLoaded so it runs after DOM is ready)
 // -----------------------------
-const showQrBtn = document.getElementById("showQrBtn");
-const qrSection = document.getElementById("qrSection");
-const waLinkEl = document.getElementById("waLink");
-const qrImageEl = document.getElementById("qrImage");
-const downloadQrBtn = document.getElementById("downloadQrBtn");
+document.addEventListener("DOMContentLoaded", () => {
+  const showQrBtn    = document.getElementById("showQrBtn");
+  const qrSection    = document.getElementById("qrSection");
+  const waLinkEl     = document.getElementById("waLink");
+  const qrImageEl    = document.getElementById("qrImage");
+  const downloadQrBtn = document.getElementById("downloadQrBtn");
 
-if (showQrBtn) {
-  showQrBtn.addEventListener("click", async () => {
+  function showAlert(message, type = 'success') {
+    const existing = document.querySelector('.alert');
+    if (existing) existing.remove();
+    const alert = document.createElement('div');
+    alert.className = `alert ${type}`;
+    alert.innerHTML = `
+      <span class="alert-icon">${type === 'success' ? '✓' : '⚠'}</span>
+      <span class="alert-message">${message}</span>
+    `;
+    document.body.appendChild(alert);
+    setTimeout(() => {
+      alert.style.animation = 'slideIn 0.3s ease reverse';
+      setTimeout(() => alert.remove(), 300);
+    }, 3000);
+  }
 
-    // If already visible → hide it
-    if (!qrSection.classList.contains("hidden")) {
-      qrSection.classList.add("hidden");
-      showQrBtn.textContent = "Show QR Code";
-      return;
-    }
+  if (showQrBtn) {
+    showQrBtn.addEventListener("click", async () => {
 
-    try {
-      const res = await fetch("/api/doctor/whatsapp-qr", {
-        credentials: "include"
-      });
-
-      if (!res.ok) {
-        showAlert("Failed to load WhatsApp QR", "error");
+      // Toggle — if already visible, hide it
+      if (!qrSection.classList.contains("hidden")) {
+        qrSection.classList.add("hidden");
+        showQrBtn.textContent = "Show QR Code";
         return;
       }
 
-      const data = await res.json();
+      showQrBtn.textContent = "⏳ Loading...";
+      showQrBtn.disabled = true;
 
-      waLinkEl.href = data.wa_link;
-      waLinkEl.textContent = data.wa_link;
+      try {
+        const res = await fetch("/api/doctor/whatsapp-qr", {
+          credentials: "include"
+        });
 
-      qrImageEl.src = `data:image/png;base64,${data.qr_base64}`;
+        if (!res.ok) {
+          showAlert("Failed to load WhatsApp QR", "error");
+          return;
+        }
 
-      qrSection.classList.remove("hidden");
-      showQrBtn.textContent = "Hide QR Code";
+        const data = await res.json();
 
-    } catch (error) {
-      console.error("QR load error:", error);
-      showAlert("Failed to load WhatsApp QR", "error");
-    }
-  });
-}
+        waLinkEl.href = data.wa_link;
+        waLinkEl.textContent = data.wa_link;
+        qrImageEl.src = `data:image/png;base64,${data.qr_base64}`;
 
+        qrSection.classList.remove("hidden");
+        showQrBtn.textContent = "Hide QR Code";
 
-if (downloadQrBtn) {
-  downloadQrBtn.addEventListener("click", () => {
-    const link = document.createElement("a");
-    link.href = qrImageEl.src;
-    link.download = "whatsapp-qr.png";
-    link.click();
-  });
-}
+      } catch (error) {
+        console.error("QR load error:", error);
+        showAlert("Failed to load WhatsApp QR", "error");
+        showQrBtn.textContent = "Show QR Code";
+      } finally {
+        showQrBtn.disabled = false;
+      }
+    });
+  }
+
+  if (downloadQrBtn) {
+    downloadQrBtn.addEventListener("click", () => {
+      if (!qrImageEl.src || qrImageEl.src.endsWith('#')) {
+        showAlert("Load QR code first", "error");
+        return;
+      }
+      const link = document.createElement("a");
+      link.href = qrImageEl.src;
+      link.download = "whatsapp-booking-qr.png";
+      link.click();
+      showAlert("QR code downloaded!");
+    });
+  }
+});

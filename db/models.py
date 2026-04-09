@@ -25,10 +25,9 @@ class Doctor(Base):
     clinic_phone_number = Column(String, nullable=True)
     notifications_enabled = Column(Boolean, default=False)
 
-
     calendar_id = Column(String, nullable=False)
 
-    working_days = Column(Text, nullable=False)  # store as CSV or JSON later
+    working_days = Column(Text, nullable=False)  # stored as CSV e.g. "0,1,2,3,4"
     work_start_time = Column(Time, nullable=False)
     work_end_time = Column(Time, nullable=False)
 
@@ -41,20 +40,17 @@ class Doctor(Base):
     appointments = relationship("Appointment", back_populates="doctor")
 
 
-
-
 class Patient(Base):
     __tablename__ = "patients"
 
     patient_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
-    phone = Column(String,  nullable=False)
+    phone = Column(String, nullable=False)
 
     first_seen_at = Column(TIMESTAMP, server_default=func.now())
     last_seen_at = Column(TIMESTAMP, server_default=func.now())
 
     appointments = relationship("Appointment", back_populates="patient")
-
 
 
 class Appointment(Base):
@@ -71,12 +67,16 @@ class Appointment(Base):
     status = Column(String, default="BOOKED")
     calendar_event_id = Column(String)
 
+    # ── NEW: treatment tracking (nullable — safe for existing rows) ──
+    treatment_key    = Column(String(64), nullable=True)
+    duration_minutes = Column(Integer,   nullable=True)
+    # ────────────────────────────────────────────────────────────────
+
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
     doctor = relationship("Doctor", back_populates="appointments")
     patient = relationship("Patient", back_populates="appointments")
-
 
 
 class DoctorCalendarCredential(Base):
@@ -104,10 +104,7 @@ class DoctorCalendarCredential(Base):
 
     expires_at = Column(TIMESTAMP, nullable=False)
 
-    created_at = Column(
-        TIMESTAMP,
-        server_default=func.now()
-    )
+    created_at = Column(TIMESTAMP, server_default=func.now())
 
     updated_at = Column(
         TIMESTAMP,
@@ -137,8 +134,6 @@ class DoctorAuth(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login_at = Column(DateTime, nullable=True)
-
-
 
 
 class PatientDoctorLink(Base):
