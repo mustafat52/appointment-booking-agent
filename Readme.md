@@ -2,7 +2,7 @@
 
 ### Multi-Channel Appointment Intelligence Platform using Conversational AI, Voice Agents & Computer Vision
 
----
+----
 
 ## 📌 Overview
 
@@ -18,7 +18,7 @@ Additionally, the platform integrates a *Dental X-Ray Image Analysis Module* for
 
 This project demonstrates the real-world application of *Artificial Intelligence in healthcare workflow automation and clinical decision support systems*.
 
----
+----
 
 # 🚀 Key Features
 
@@ -42,7 +42,7 @@ channel/web.py
 agent.py
 
 
----
+----
 
 ### 💬 WhatsApp Appointment Booking Agent
 
@@ -63,7 +63,7 @@ follow_up_agent.py
 services/notification_service.py
 
 
----
+----
 
 ### 📞 Voice-Based Appointment Booking Assistant
 
@@ -84,7 +84,7 @@ voice_routes.py
 call_log_route.py
 
 
----
+----
 
 # 🦷 AI Dental X-Ray Image Analysis Module (Implemented)
 
@@ -110,7 +110,7 @@ best.pt
 
 This transforms the system from a scheduling platform into a *complete AI-assisted dental healthcare solution*.
 
----
+----
 
 # 🧠 Patient No-Show Prediction Module (In Progress)
 
@@ -139,7 +139,7 @@ tools.py
 
 The module is currently under testing and integration into the appointment workflow engine.
 
----
+----
 
 # 🔔 Smart Notification & Follow-Up System
 
@@ -160,7 +160,7 @@ Supports:
 * follow-up scheduling assistance
 * attendance optimization messaging
 
----
+----
 
 # 📅 Google Calendar Integration
 
@@ -179,7 +179,7 @@ Features:
 * availability tracking
 * schedule conflict prevention
 
----
+----
 
 # 🔐 Doctor Authentication & Access Control System
 
@@ -200,7 +200,7 @@ Includes:
 * onboarding interface
 * protected dashboard access
 
----
+----
 
 # 📊 Doctor Dashboard Interface
 
@@ -234,7 +234,7 @@ Supports:
 * voice dashboard interface
 * scheduling visualization
 
----
+----
 
 # 🗂️ Database Architecture
 
@@ -256,7 +256,7 @@ Supports:
 * doctor configuration storage
 * scheduling analytics support
 
----
+----
 
 # 🏗️ System Architecture Workflow
 
@@ -280,7 +280,7 @@ Notification Engine
 ↓
 Prediction Pipeline Integration
 
----
+----
 
 # 📂 Repository Structure
 
@@ -348,7 +348,7 @@ APPOINTMENT-BOOKING-AGENT/
 ├── runtime.txt                      # Runtime configuration
 └── .env                             # Environment variables (not committed)
 ```
----
+----
 
 
 # 🛠️ Technology Stack
@@ -367,7 +367,7 @@ APPOINTMENT-BOOKING-AGENT/
 | Migration Tool        | Alembic                   |
 | Calendar Integration  | Google OAuth API          |
 
----
+----
 
 # ⚙️ Installation Guide
 
@@ -395,7 +395,7 @@ pip install -r requirements.txt
 python main.py
 
 
----
+----
 
 # 📊 Applications
 
@@ -405,7 +405,7 @@ Healthcare Automation Platforms
 Telemedicine Scheduling Systems
 AI Healthcare Assistant Systems
 
----
+----
 
 # 👨‍💻 Contributors
 
@@ -426,7 +426,7 @@ CSM – 4A
 Institution:
 Lords Institute of Engineering and Technology
 
----
+----
 
 # 🔮 Future Enhancements
 
