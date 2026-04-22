@@ -38,18 +38,19 @@ DISABLE_CALENDAR = os.getenv("DISABLE_CALENDAR", "false").lower() == "true"
 def get_credentials_for_doctor(doctor_id):
     """
     DB-first calendar credentials lookup.
+    Auto-refreshes expired tokens and persists the new token back to DB.
     Falls back to in-memory store for safety.
     """
     from db.repository import get_doctor_calendar_credentials
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
 
     doctor_id_str = str(doctor_id)
 
     # 1️⃣ DB-first
     creds_row = get_doctor_calendar_credentials(doctor_id)
     if creds_row:
-        from google.oauth2.credentials import Credentials
-
-        return Credentials(
+        creds = Credentials(
             token=creds_row.access_token,
             refresh_token=creds_row.refresh_token,
             token_uri="https://oauth2.googleapis.com/token",
@@ -59,9 +60,34 @@ def get_credentials_for_doctor(doctor_id):
             expiry=creds_row.expires_at,
         )
 
+        # 🔑 FIX: Refresh token if expired, then save new token back to DB
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            _persist_refreshed_credentials(doctor_id, creds)
+
+        return creds
+
     # 2️⃣ Fallback to in-memory (temporary safety net)
     creds_map = oauth_store.get("credentials", {})
     return creds_map.get(doctor_id_str)
+
+
+def _persist_refreshed_credentials(doctor_id, creds):
+    """
+    Saves a refreshed access token back to the DB.
+    Called automatically by get_credentials_for_doctor after a token refresh.
+    """
+    try:
+        with SessionLocal() as db:
+            row = db.query(DoctorCalendarCredential).filter(
+                DoctorCalendarCredential.doctor_id == doctor_id
+            ).first()
+            if row:
+                row.access_token = creds.token
+                row.expires_at = creds.expiry
+                db.commit()
+    except Exception:
+        pass  # Non-fatal — token was refreshed in memory, booking can still proceed
 
 
 # ------------------------------------------------------------------

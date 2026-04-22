@@ -38,5 +38,6 @@ def get_oauth_flow():
 def build_calendar_service(credentials):
     """
     Build Google Calendar service safely.
+    cache_discovery=False suppresses the oauth2client file_cache warning.
     """
-    return build("calendar", "v3", credentials=credentials)
+    return build("calendar", "v3", credentials=credentials, cache_discovery=False)
